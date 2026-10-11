@@ -51,8 +51,7 @@
     <logger level="INFO" category="${app.logCategory}.intake" message="#['INTAKE_RECEIVED corrId=' ++ vars.corrId ++ ' eventId=' ++ vars.eventId]"/>
     <flow-ref name="load-risk-config-sf" doc:name="Load risk config"/>
     <flow-ref name="dedupe-event-sf" doc:name="Dedupe"/>
-    <!-- Live velocity tracking is Milestone 2; this initial intake counts the current event only. -->
-    <set-variable variableName="velocityCount" value="#[1]"/>
+    <flow-ref name="velocity-update-sf" doc:name="Count unique events in card window"/>
     <flow-ref name="score-event-sf" doc:name="Score + Band"/>
     <flow-ref name="publish-scored-event-sf" doc:name="Publish to priority queue"/>
     <set-variable variableName="published" value="#[true]"/>
@@ -133,7 +132,8 @@ output application/java
         <ee:set-variable variableName="envelope"><![CDATA[%dw 2.0
 output application/json
 ---
-{ correlationId: vars.corrId, receivedAt: now(), velocityCount: vars.velocityCount, scoring: vars.scoring, event: vars.event }]]></ee:set-variable>
+{ correlationId: vars.corrId, receivedAt: now(), velocityCount: vars.velocityCount,
+  riskConfig: vars.riskCfg, scoring: vars.scoring, event: vars.event }]]></ee:set-variable>
       </ee:variables>
     </ee:transform>
     <set-variable variableName="targetQueue" value="#[if (vars.scoring.riskBand == 'HIGH') p('vm.queue.high') else p('vm.queue.standard')]" doc:name="Routing decision"/>

@@ -4,6 +4,8 @@ Source of truth: the supplied Cognizant FinTech Payment Fraud Detection PDF.
 Implementation sequence: the user's pasted five-milestone instructions; the
 build guide supplies examples, not proof of implementation. On 11 October 2026
 the user narrowed current work to the initial part, deferring Docker/DB/MailHog.
+The subsequent request authorized Milestone 2. The initial table entries below
+are retained as historical scope; the Milestone 2 addendum gives current status.
 
 Statuses below describe implementation scope. PASS must be supported by the
 actual milestone evidence, not by file existence. Future-stage items are PENDING.
@@ -98,3 +100,29 @@ The guide's optional-deployment wording does not mark official A9 satisfied.
 References: [VM connector](https://docs.mulesoft.com/vm-connector/latest/),
 [Object Store atomic operations](https://docs.mulesoft.com/object-store-connector/latest/object-store-connector-reference),
 [Configuration properties](https://docs.mulesoft.com/mule-runtime/latest/configuring-properties).
+
+## Milestone 2 current-status addendum
+
+The current implementation supersedes the initial pending entries above.
+See `docs/milestone-2.md` and `verification/milestone-2/munit-results.json`.
+49 tests pass, including every original Milestone 1 test. Component coverage is
+90.14%; MySQL is mocked and live database execution remains deferred.
+
+| Requirements | Current implementation and evidence |
+|---|---|
+| F1/F3/F5, N1/N2/N3, A1/A2 | Intake regression PASS; response/header/queue identifiers, 82 HIGH, standard LOW, duplicate reservation and bounded retries verified |
+| F2 | All mandatory and watchlist rules PASS; configurable JSON policies reread per request, edit changes score without redeployment; invalid policy rejected |
+| F4 / velocity part of F2 | Real Object Store isolation/unique-event/sliding expiry/physical TTL PASS; `velocity.xml`, `Velocity.dwl` |
+| F6, N5/N6 | Both actual VM listeners PASS with mocked DB; profile mapping, all decisions, scoring failure and missing/invalid-profile REVIEW PASS; live SQL remains NOT VERIFIED |
+| N4 | HIGH misroute explicitly rerouted before enrichment; mock-assisted route assertion PASS |
+| N7 / eventual delivery portion of F11/A7 | Real VM transaction rollback with simulated DB failure PASS; live DB stop/recovery and crash durability remain pending |
+| F12 correlation | Intake, both listeners and decision queue identifiers PASS; monitoring remains M3 |
+| F13/A8 | Rule isolation/band boundaries and new consumer/velocity tests PASS; database mocks used; alert/throttle/SMTP suites remain M3/M4 |
+| F7/F8/F9, A3/A4/A5 | Pending M3. Persistent decision handoff exists; no database writes/email claims |
+| F10/A6 | Prior API protection regression PASS; masking preserved in decision envelopes; full database/email inspection remains M3/M4 |
+| F11/N8/N9/N10/N11/N12 | Intake errors and rollback tested as above; DLQ/email recovery, broader data-protection/error injection and final quality gate remain pending |
+| T5 | Actual 90.14% coverage report reviewed; seven named processors still require negative injections. No unsupported impossibility claim |
+| A9/T6/T9/T12 | Cloud deployment, autodiscovery, policies and domain execution remain pending |
+
+Normal consumers are opt-in until the deferred DB setup. The Milestone 1 default
+run remains usable, and old queue envelopes without policy snapshots are tested.

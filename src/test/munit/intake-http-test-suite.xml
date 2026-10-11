@@ -27,7 +27,7 @@
       <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
       <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
     </http:request><vm:consume config-ref="VM_Config" queueName="${vm.queue.high}" timeout="2"/></munit:execution>
-    <munit:validation><munit-tools:assert-that expression="#[vars.response.attributes.statusCode]" is="#[MunitTools::equalTo(202)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskScore]" is="#[MunitTools::equalTo(82)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskBand]" is="#[MunitTools::equalTo('HIGH')]"/><munit-tools:assert-that expression="#[vars.response.payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.scoring.ruleHits.ruleCode == ['R01_AMOUNT', 'R02_GEO_MISMATCH', 'R04_MERCHANT_CAT']]" is="#[MunitTools::equalTo(true)]"/></munit:validation>
+    <munit:validation><munit-tools:assert-that expression="#[vars.response.attributes.statusCode]" is="#[MunitTools::equalTo(202)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskScore]" is="#[MunitTools::equalTo(82)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskBand]" is="#[MunitTools::equalTo('HIGH')]"/><munit-tools:assert-that expression="#[vars.response.attributes.headers.'x-correlation-id']" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[vars.response.payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.scoring.ruleHits.ruleCode == ['R01_AMOUNT', 'R02_GEO_MISMATCH', 'R04_MERCHANT_CAT']]" is="#[MunitTools::equalTo(true)]"/></munit:validation>
   </munit:test>
 <munit:test name="duplicate-event-409-preserves-original-reservation">
     <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
@@ -40,8 +40,8 @@
       <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json')]]]></http:body>
       <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
       <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
-    </http:request></munit:execution>
-    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(409)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('DUPLICATE_EVENT')]"/></munit:validation>
+    </http:request><vm:consume config-ref="VM_Config" queueName="${vm.queue.high}" timeout="2" target="duplicateQueued"/><os:contains key="PAY-EVT-2026-884512" objectStore="dedupStore" target="duplicateReserved"/></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(409)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('DUPLICATE_EVENT')]"/><munit-tools:assert-that expression="#[vars.duplicateReserved]" is="#[MunitTools::equalTo(true)]"/><munit-tools:verify-call processor="vm:publish" times="1"/></munit:validation>
   </munit:test>
 <munit:test name="malformed-json-400">
     <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>

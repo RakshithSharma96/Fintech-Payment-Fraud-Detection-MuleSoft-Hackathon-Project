@@ -1,0 +1,457 @@
+{
+  "coverage": 90.14084507042253,
+  "requiredApplicationCoverage": -1.0,
+  "requiredResourceCoverage": -1.0,
+  "requiredFlowCoverage": -1.0,
+  "flowCount": 14,
+  "processorCount": 71,
+  "coveredProcessorCount": 64,
+  "files": [
+    {
+      "name": "global-config.xml",
+      "flowCount": 2,
+      "coverage": 71.42857142857143,
+      "processorCount": 14,
+      "weight": 19.718309859154928,
+      "flows": [
+        {
+          "name": "load-risk-config-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 4,
+          "coveredProcessorCount": 4,
+          "lines": [
+            {
+              "lineNumber": 154,
+              "covered": true
+            },
+            {
+              "lineNumber": 182,
+              "covered": true
+            },
+            {
+              "lineNumber": 184,
+              "covered": true
+            },
+            {
+              "lineNumber": 181,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "globalErrorHandler",
+          "type": "ERROR_HANDLER",
+          "coverage": 60.0,
+          "messageProcessorCount": 10,
+          "coveredProcessorCount": 6,
+          "lines": [
+            {
+              "lineNumber": 92,
+              "covered": false
+            },
+            {
+              "lineNumber": 140,
+              "covered": false
+            },
+            {
+              "lineNumber": 121,
+              "covered": true
+            },
+            {
+              "lineNumber": 80,
+              "covered": true
+            },
+            {
+              "lineNumber": 93,
+              "covered": false
+            },
+            {
+              "lineNumber": 141,
+              "covered": false
+            },
+            {
+              "lineNumber": 108,
+              "covered": true
+            },
+            {
+              "lineNumber": 79,
+              "covered": true
+            },
+            {
+              "lineNumber": 122,
+              "covered": true
+            },
+            {
+              "lineNumber": 109,
+              "covered": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "scoring-consumer.xml",
+      "flowCount": 5,
+      "coverage": 95.65217391304348,
+      "processorCount": 23,
+      "weight": 32.394366197183096,
+      "flows": [
+        {
+          "name": "scoring-consumer-high-flow",
+          "type": "FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 2,
+          "coveredProcessorCount": 2,
+          "lines": [
+            {
+              "lineNumber": 19,
+              "covered": true
+            },
+            {
+              "lineNumber": 18,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "process-scored-event-sf",
+          "type": "SUB_FLOW",
+          "coverage": 92.3076923076923,
+          "messageProcessorCount": 13,
+          "coveredProcessorCount": 12,
+          "lines": [
+            {
+              "lineNumber": 33,
+              "covered": false
+            },
+            {
+              "lineNumber": 52,
+              "covered": true
+            },
+            {
+              "lineNumber": 31,
+              "covered": true
+            },
+            {
+              "lineNumber": 54,
+              "covered": true
+            },
+            {
+              "lineNumber": 49,
+              "covered": true
+            },
+            {
+              "lineNumber": 35,
+              "covered": true
+            },
+            {
+              "lineNumber": 51,
+              "covered": true
+            },
+            {
+              "lineNumber": 58,
+              "covered": true
+            },
+            {
+              "lineNumber": 41,
+              "covered": true
+            },
+            {
+              "lineNumber": 39,
+              "covered": true
+            },
+            {
+              "lineNumber": 48,
+              "covered": true
+            },
+            {
+              "lineNumber": 36,
+              "covered": true
+            },
+            {
+              "lineNumber": 50,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "enrich-customer-profile-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 5,
+          "coveredProcessorCount": 5,
+          "lines": [
+            {
+              "lineNumber": 74,
+              "covered": true
+            },
+            {
+              "lineNumber": 65,
+              "covered": true
+            },
+            {
+              "lineNumber": 72,
+              "covered": true
+            },
+            {
+              "lineNumber": 71,
+              "covered": true
+            },
+            {
+              "lineNumber": 70,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "scoring-consumer-standard-flow",
+          "type": "FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 2,
+          "coveredProcessorCount": 2,
+          "lines": [
+            {
+              "lineNumber": 25,
+              "covered": true
+            },
+            {
+              "lineNumber": 26,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "scoringConsumerErrorHandler",
+          "type": "ERROR_HANDLER",
+          "coverage": 100.0,
+          "messageProcessorCount": 1,
+          "coveredProcessorCount": 1,
+          "lines": [
+            {
+              "lineNumber": 80,
+              "covered": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "payment-events-api.xml",
+      "flowCount": 6,
+      "coverage": 96.55172413793103,
+      "processorCount": 29,
+      "weight": 40.84507042253521,
+      "flows": [
+        {
+          "name": "queue-publish-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 1,
+          "coveredProcessorCount": 1,
+          "lines": [
+            {
+              "lineNumber": 146,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "payment-events-api-main",
+          "type": "FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 2,
+          "coveredProcessorCount": 2,
+          "lines": [
+            {
+              "lineNumber": 37,
+              "covered": true
+            },
+            {
+              "lineNumber": 38,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "post:\\payments\\events:application\\json:payment-api-config",
+          "type": "FLOW",
+          "coverage": 94.11764705882354,
+          "messageProcessorCount": 17,
+          "coveredProcessorCount": 16,
+          "lines": [
+            {
+              "lineNumber": 49,
+              "covered": true
+            },
+            {
+              "lineNumber": 52,
+              "covered": true
+            },
+            {
+              "lineNumber": 73,
+              "covered": true
+            },
+            {
+              "lineNumber": 56,
+              "covered": true
+            },
+            {
+              "lineNumber": 57,
+              "covered": true
+            },
+            {
+              "lineNumber": 54,
+              "covered": true
+            },
+            {
+              "lineNumber": 48,
+              "covered": true
+            },
+            {
+              "lineNumber": 44,
+              "covered": true
+            },
+            {
+              "lineNumber": 55,
+              "covered": true
+            },
+            {
+              "lineNumber": 59,
+              "covered": true
+            },
+            {
+              "lineNumber": 51,
+              "covered": true
+            },
+            {
+              "lineNumber": 47,
+              "covered": true
+            },
+            {
+              "lineNumber": 53,
+              "covered": true
+            },
+            {
+              "lineNumber": 50,
+              "covered": true
+            },
+            {
+              "lineNumber": 82,
+              "covered": false
+            },
+            {
+              "lineNumber": 43,
+              "covered": true
+            },
+            {
+              "lineNumber": 80,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "publish-scored-event-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 4,
+          "coveredProcessorCount": 4,
+          "lines": [
+            {
+              "lineNumber": 141,
+              "covered": true
+            },
+            {
+              "lineNumber": 130,
+              "covered": true
+            },
+            {
+              "lineNumber": 139,
+              "covered": true
+            },
+            {
+              "lineNumber": 140,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "score-event-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 3,
+          "coveredProcessorCount": 3,
+          "lines": [
+            {
+              "lineNumber": 114,
+              "covered": true
+            },
+            {
+              "lineNumber": 115,
+              "covered": true
+            },
+            {
+              "lineNumber": 102,
+              "covered": true
+            }
+          ]
+        },
+        {
+          "name": "dedupe-event-sf",
+          "type": "SUB_FLOW",
+          "coverage": 100.0,
+          "messageProcessorCount": 2,
+          "coveredProcessorCount": 2,
+          "lines": [
+            {
+              "lineNumber": 93,
+              "covered": true
+            },
+            {
+              "lineNumber": 96,
+              "covered": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "velocity.xml",
+      "flowCount": 1,
+      "coverage": 80.0,
+      "processorCount": 5,
+      "weight": 7.042253521126761,
+      "flows": [
+        {
+          "name": "velocity-update-sf",
+          "type": "SUB_FLOW",
+          "coverage": 80.0,
+          "messageProcessorCount": 5,
+          "coveredProcessorCount": 4,
+          "lines": [
+            {
+              "lineNumber": 14,
+              "covered": true
+            },
+            {
+              "lineNumber": 19,
+              "covered": false
+            },
+            {
+              "lineNumber": 17,
+              "covered": true
+            },
+            {
+              "lineNumber": 10,
+              "covered": true
+            },
+            {
+              "lineNumber": 13,
+              "covered": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

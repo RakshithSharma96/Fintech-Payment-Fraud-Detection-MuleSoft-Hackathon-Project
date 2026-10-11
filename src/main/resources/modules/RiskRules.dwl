@@ -59,15 +59,16 @@ fun decide(score, band, forceReview, cfg) =
   else "REVIEW"
 
 /* Consumer-side finalisation. Re-scores with the customer profile; FAILS SAFE to REVIEW if anything throws. */
-fun finalize(env, profile, cfg) = do {
+fun finalize(env, profile, cfg, enrichmentIncomplete = false) = do {
   var attempt = try(() -> evaluate(env.event, { velocityCount: env.velocityCount default 0, profile: profile }, cfg))
   var failed = (env.scoring.scoringFailed default false) or (not attempt.success)
   var base = if (attempt.success) attempt.result
              else { score: env.scoring.riskScore default cfg.failSafeScore, hits: env.scoring.ruleHits default [] }
   var score = if (failed) max([base.score, cfg.failSafeScore]) else base.score
-  var hits = if (failed) (base.hits ++ [{ ruleCode: "SYS_SCORING_FAILURE", ruleName: "Scoring failed - routed to manual review", ruleWeight: 0 }])
+  var hits = if (failed) ((base.hits ++ [{ ruleCode: "SYS_SCORING_FAILURE", ruleName: "Scoring failed - routed to manual review", ruleWeight: 0 }]) distinctBy $.ruleCode)
              else base.hits
   var b = band(score, cfg)
   ---
-  { riskScore: score, riskBand: b, decision: decide(score, b, failed, cfg), ruleHits: hits }
+  { riskScore: score, riskBand: b, decision: decide(score, b, failed or enrichmentIncomplete, cfg),
+    ruleHits: hits, scoringFailed: failed, enrichmentIncomplete: enrichmentIncomplete }
 }

@@ -1,0 +1,17 @@
+{
+  "amountLimit": 100000,
+  "velocityMax": 5,
+  "highRiskCategories": ["ELECTRONICS", "CRYPTO", "GAMBLING", "JEWELRY", "MONEY_TRANSFER"],
+  "usualHourStart": 6,
+  "usualHourEnd": 23,
+  "wAmount": 35,
+  "wGeo": 30,
+  "wVelocity": 20,
+  "wMerchant": 17,
+  "wHour": 15,
+  "wWatchlist": 10,
+  "mediumMin": 30,
+  "highMin": 60,
+  "blockMin": 85,
+  "failSafeScore": 45
+}

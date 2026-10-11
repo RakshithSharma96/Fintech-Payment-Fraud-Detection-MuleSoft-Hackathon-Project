@@ -6,7 +6,9 @@
   "requiredProduct": "MULE_EE",
   "configs": [
     "global-config.xml",
-    "payment-events-api.xml"
+    "payment-events-api.xml",
+    "velocity.xml",
+    "scoring-consumer.xml"
   ],
   "secureProperties": [
     "secure.key"

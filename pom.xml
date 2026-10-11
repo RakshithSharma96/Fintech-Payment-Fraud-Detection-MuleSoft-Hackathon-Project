@@ -48,6 +48,10 @@
           <systemPropertyVariables>
             <test.projectDir>${project.basedir}</test.projectDir>
             <secure.key>${env.FRAUD_SECURE_KEY}</secure.key>
+            <risk.policyFile>${project.basedir}/.local/munit-risk-policy.json</risk.policyFile>
+            <risk.velocityWindowSeconds>2</risk.velocityWindowSeconds>
+            <risk.velocitySweepSeconds>1</risk.velocitySweepSeconds>
+            <consumer.initialState>started</consumer.initialState>
           </systemPropertyVariables>
           <coverage>
             <runCoverage>true</runCoverage>
@@ -62,6 +66,12 @@
     </plugins>
   </build>
   <dependencies>
+    <dependency>
+      <groupId>org.mule.connectors</groupId>
+      <artifactId>mule-file-connector</artifactId>
+      <version>1.5.6</version>
+      <classifier>mule-plugin</classifier>
+    </dependency>
     <dependency>
       <groupId>org.mule.connectors</groupId>
       <artifactId>mule-http-connector</artifactId>

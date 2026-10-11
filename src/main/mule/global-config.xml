@@ -6,6 +6,7 @@
       xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
       xmlns:os="http://www.mulesoft.org/schema/mule/os"
       xmlns:db="http://www.mulesoft.org/schema/mule/db"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xmlns:email="http://www.mulesoft.org/schema/mule/email"
       xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
       xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
@@ -18,6 +19,7 @@
         http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
         http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
         http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
         http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
         http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
         http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
@@ -43,6 +45,13 @@
 
   <!-- Database and SMTP connections are deferred. Intake can run without them.
        Connector dependencies and environment settings are prepared for later milestones. -->
+  <file:config name="Risk_Policy_File_Config"><file:connection/></file:config>
+  <db:config name="Customer_Database_Config">
+    <db:my-sql-connection host="${db.host}" port="${db.port}" user="${db.user}"
+      password="${secure::db.password}" database="${db.name}">
+      <reconnection failsDeployment="false"><reconnect frequency="2000" count="3"/></reconnection>
+    </db:my-sql-connection>
+  </db:config>
 
   <vm:config name="VM_Config" doc:name="VM Config">
     <vm:queues>
@@ -50,13 +59,15 @@
       <vm:queue queueName="${vm.queue.high}" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxOutstanding}"/>
       <vm:queue queueName="${vm.queue.standard}" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxOutstanding}"/>
       <vm:queue queueName="${vm.queue.dlq}" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxOutstanding}"/>
+      <vm:queue queueName="${vm.queue.decisions}" queueType="PERSISTENT" maxOutstandingMessages="${vm.maxOutstanding}"/>
       <vm:queue queueName="alertQueue" queueType="PERSISTENT"/>
     </vm:queues>
   </vm:config>
 
   <!-- ===== Object stores ===== -->
   <os:object-store name="dedupStore" persistent="true" entryTtl="${dedupe.ttlHours}" entryTtlUnit="HOURS"  doc:name="Dedupe Store"/>
-  <os:object-store name="velocityStore" persistent="true" entryTtl="${risk.velocityWindowSeconds}" entryTtlUnit="SECONDS"  doc:name="Velocity Store"/>
+  <os:object-store name="velocityStore" persistent="true" entryTtl="${risk.velocityWindowSeconds}" entryTtlUnit="SECONDS"
+    expirationInterval="${risk.velocitySweepSeconds}" expirationIntervalUnit="SECONDS" doc:name="Velocity Store"/>
   <os:object-store name="alertThrottleStore" persistent="true" entryTtl="${alert.throttle.storeTtlMinutes}" entryTtlUnit="MINUTES" maxEntries="100000" doc:name="Alert Throttle Store"/>
   <os:object-store name="spikeStore" persistent="true" entryTtl="10" entryTtlUnit="MINUTES" doc:name="Spike cooldown Store"/>
 
@@ -106,7 +117,7 @@ ErrorResponse::build("DUPLICATE_EVENT", "This eventId was already accepted. No f
     </on-error-propagate>
 
     <!-- 503: queue / dependency unavailable -> NOT accepted, caller must retry -->
-    <on-error-propagate type="MULE:RETRY_EXHAUSTED, DB:CONNECTIVITY" enableNotifications="false" logException="false">
+    <on-error-propagate type="MULE:RETRY_EXHAUSTED, DB:CONNECTIVITY, APP:VELOCITY_UNAVAILABLE, APP:INVALID_RISK_CONFIG" enableNotifications="false" logException="false">
       <logger level="ERROR" category="${app.logCategory}.error" message="#['DEPENDENCY_UNAVAILABLE eventId=' ++ (vars.eventId default 'n/a') ++ ' type=' ++ error.errorType.identifier ++ ' corrId=' ++ (vars.corrId default correlationId)]"/>
       <ee:transform doc:name="503 body">
         <ee:message><ee:set-payload><![CDATA[%dw 2.0
@@ -164,5 +175,16 @@ output application/java
 }]]></ee:set-variable>
       </ee:variables>
     </ee:transform>
+    <choice doc:name="Optional live rule policy">
+      <when expression="#[not isEmpty(p('risk.policyFile'))]">
+        <try doc:name="Read and validate live policy">
+          <file:read config-ref="Risk_Policy_File_Config" path="${risk.policyFile}" outputMimeType="application/json" target="riskOverrides"/>
+          <set-variable variableName="riskCfg" value="#[output application/java --- modules::RiskConfig::override(vars.riskCfg, vars.riskOverrides)]"/>
+          <error-handler><on-error-propagate type="ANY" logException="false" enableNotifications="false">
+            <raise-error type="APP:INVALID_RISK_CONFIG" description="Risk policy unavailable or invalid"/>
+          </on-error-propagate></error-handler>
+        </try>
+      </when>
+    </choice>
   </sub-flow>
 </mule>

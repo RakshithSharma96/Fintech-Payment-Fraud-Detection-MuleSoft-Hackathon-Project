@@ -3,6 +3,7 @@
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
       xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
       xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -10,6 +11,7 @@
         http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
         http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
         http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
         http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
         http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
 
@@ -19,6 +21,7 @@
   <!-- fixtures: config + a LOW-risk baseline event that triggers NO rule -->
   <munit:before-test name="fixtures">
     <os:clear objectStore="dedupStore"/>
+    <os:clear objectStore="velocityStore"/>
     <ee:transform>
       <ee:variables>
         <ee:set-variable variableName="cfg"><![CDATA[%dw 2.0
@@ -38,6 +41,9 @@ output application/json
   device: { geoCountry: "IN" } }]]></ee:set-variable>
       </ee:variables>
     </ee:transform>
+    <file:write config-ref="Risk_Policy_File_Config" path="${risk.policyFile}">
+      <file:content>#[output application/json --- vars.cfg]</file:content>
+    </file:write>
   </munit:before-test>
 
   <!-- ============ R01 amount ============ -->

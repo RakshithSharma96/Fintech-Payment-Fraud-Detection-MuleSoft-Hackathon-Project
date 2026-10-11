@@ -9,6 +9,7 @@ vm:
     high: "payments-high-q"
     standard: "payments-std-q"
     dlq: "payments-dlq"
+    decisions: "payments-decisions-q"
   maxOutstanding: "100000"
 db:
   host: "localhost"
@@ -22,6 +23,8 @@ smtp:
 dedupe:
   ttlHours: "24"
 consumer:
+  # DB execution remains deferred. Opt in with -M-Dconsumer.initialState=started.
+  initialState: "stopped"
   high:
     concurrency: "8"
   standard:
@@ -40,9 +43,12 @@ retry:
     max: "3"
     delayMs: "2000"
 risk:
+  # Optional absolute JSON path. Once enabled, file edits take effect per request.
+  policyFile: ""
   amountLimit: "100000"
   velocityMax: "5"
   velocityWindowSeconds: "300"
+  velocitySweepSeconds: "5"
   highRiskCategories: "ELECTRONICS,CRYPTO,GAMBLING,JEWELRY,MONEY_TRANSFER"
   usualHourStart: "6"
   usualHourEnd: "23"

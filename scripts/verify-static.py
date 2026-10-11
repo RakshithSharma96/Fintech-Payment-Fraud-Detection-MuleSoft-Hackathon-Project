@@ -2,9 +2,13 @@
 from pathlib import Path
 import json
 import xml.etree.ElementTree as ET
+import argparse
 from jsonschema import Draft4Validator
 
 root = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', default='verification')
+args = parser.parse_args()
 files = list((root / 'src').rglob('*.xml')) + [root/'pom.xml', root/'.project', root/'.classpath']
 for file in files:
     ET.parse(file)
@@ -40,6 +44,7 @@ assert all(ref in names for ref in refs), refs
 artifact=json.loads((root/'mule-artifact.json').read_text())
 assert all((root/'src/main/mule'/name).exists() for name in artifact['configs'])
 report={'validation':'static only, not Mule execution','xml_files':len(files),'schema_sample':'PASS','invalid_schema_cases':cases,'flow_references':'PASS','artifact_config_files':'PASS'}
-(root/'verification').mkdir(exist_ok=True)
-(root/'verification/static-checks.json').write_text(json.dumps(report,indent=2)+'\n')
+output = root / args.output_dir
+output.mkdir(parents=True, exist_ok=True)
+(output/'static-checks.json').write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2))

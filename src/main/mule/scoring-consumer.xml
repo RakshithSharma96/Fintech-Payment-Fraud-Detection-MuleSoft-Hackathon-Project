@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+ xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+ xmlns:db="http://www.mulesoft.org/schema/mule/db"
+ xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+ xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+ http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+ http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+  <!-- Local VM transaction covers consume + decision/reroute publication.
+       SQL enrichment is a read outside that transaction. Nothing is consumed
+       successfully until the next persistent VM handoff succeeds. -->
+  <flow name="scoring-consumer-high-flow" initialState="${consumer.initialState}">
+    <vm:listener config-ref="VM_Config" queueName="${vm.queue.high}"
+      numberOfConsumers="${consumer.high.concurrency}" transactionalAction="ALWAYS_BEGIN"/>
+    <set-variable variableName="sourceQueue" value="${vm.queue.high}"/>
+    <flow-ref name="process-scored-event-sf"/>
+    <error-handler ref="scoringConsumerErrorHandler"/>
+  </flow>
+  <flow name="scoring-consumer-standard-flow" initialState="${consumer.initialState}">
+    <vm:listener config-ref="VM_Config" queueName="${vm.queue.standard}"
+      numberOfConsumers="${consumer.standard.concurrency}" transactionalAction="ALWAYS_BEGIN"/>
+    <set-variable variableName="sourceQueue" value="${vm.queue.standard}"/>
+    <flow-ref name="process-scored-event-sf"/>
+    <error-handler ref="scoringConsumerErrorHandler"/>
+  </flow>
+
+  <sub-flow name="process-scored-event-sf">
+    <set-variable variableName="envelope" value="#[output application/java --- if (payload is Object) payload else read(payload as String, 'application/json')]"/>
+    <choice><when expression="#[modules::Masking::hasPan(vars.envelope)]">
+      <raise-error type="APP:UNSAFE_QUEUE_EVENT" description="Unsafe payment data in queue envelope"/>
+    </when></choice>
+    <set-variable variableName="eventId" value="#[vars.envelope.event.eventId]"/>
+    <set-variable variableName="corrId" value="#[vars.envelope.correlationId default correlationId]"/>
+    <choice doc:name="Assert queue priority">
+      <when expression="#[vars.envelope.scoring.riskBand == 'HIGH' and vars.sourceQueue != p('vm.queue.high')]">
+        <logger level="ERROR" category="${app.logCategory}.routing" message="#['PRIORITY_MISROUTE eventId=' ++ vars.eventId ++ ' corrId=' ++ vars.corrId ++ ' rerouting to HIGH']"/>
+        <until-successful maxRetries="${retry.queue.max}" millisBetweenRetries="${retry.queue.delayMs}">
+          <vm:publish config-ref="VM_Config" queueName="${vm.queue.high}" transactionalAction="ALWAYS_JOIN">
+            <vm:content>#[vars.envelope]</vm:content>
+          </vm:publish>
+        </until-successful>
+      </when>
+      <otherwise>
+        <choice><when expression="#[vars.envelope.riskConfig != null]">
+          <set-variable variableName="riskCfg" value="#[modules::RiskConfig::validate(vars.envelope.riskConfig)]"/>
+        </when><otherwise><flow-ref name="load-risk-config-sf"/></otherwise></choice>
+        <flow-ref name="enrich-customer-profile-sf"/>
+        <set-variable variableName="final" value="#[output application/java --- modules::RiskRules::finalize(vars.envelope, vars.profile, vars.riskCfg, vars.enrichmentIncomplete)]"/>
+        <set-variable variableName="decisionEnvelope" value="#[output application/java --- vars.envelope ++ {final: vars.final, profile: vars.profile, enrichmentIncomplete: vars.enrichmentIncomplete, sourceQueue: vars.sourceQueue, finalizedAt: now(), alertRequired: vars.envelope.scoring.riskBand == 'HIGH' or vars.final.riskBand == 'HIGH' or vars.final.decision == 'BLOCK'}]"/>
+        <until-successful maxRetries="${retry.queue.max}" millisBetweenRetries="${retry.queue.delayMs}">
+          <vm:publish config-ref="VM_Config" queueName="${vm.queue.decisions}" transactionalAction="ALWAYS_JOIN" doc:name="Park decision for Milestone 3 persistence">
+            <vm:content>#[vars.decisionEnvelope]</vm:content>
+          </vm:publish>
+        </until-successful>
+        <logger level="INFO" category="${app.logCategory}.consumer" message="#['DECISION_QUEUED eventId=' ++ vars.eventId ++ ' corrId=' ++ vars.corrId ++ ' decision=' ++ vars.final.decision ++ ' band=' ++ vars.final.riskBand]"/>
+      </otherwise>
+    </choice>
+  </sub-flow>
+
+  <sub-flow name="enrich-customer-profile-sf">
+    <until-successful maxRetries="${retry.db.max}" millisBetweenRetries="${retry.db.delayMs}">
+      <db:select config-ref="Customer_Database_Config" target="profileRows" transactionalAction="NOT_SUPPORTED" doc:name="Read customer risk profile">
+        <db:sql>SELECT customer_id, risk_profile, usual_hour_start, usual_hour_end FROM customer_risk_profile WHERE customer_id = :customerId</db:sql>
+        <db:input-parameters>#[{customerId: vars.envelope.event.customer.customerId}]</db:input-parameters>
+      </db:select>
+    </until-successful>
+    <set-variable variableName="profileResult" value="#[output application/java --- modules::CustomerProfile::normalize(vars.profileRows, vars.riskCfg)]"/>
+    <set-variable variableName="enrichmentIncomplete" value="#[vars.profileResult.enrichmentIncomplete]"/>
+    <set-variable variableName="profile" value="#[vars.profileResult.profile]"/>
+    <choice><when expression="#[vars.enrichmentIncomplete]">
+      <logger level="WARN" category="${app.logCategory}.consumer" message="#['PROFILE_NOT_FOUND eventId=' ++ vars.eventId ++ ' corrId=' ++ vars.corrId ++ ' default profile; REVIEW required']"/>
+    </when></choice>
+  </sub-flow>
+
+  <error-handler name="scoringConsumerErrorHandler">
+    <on-error-propagate type="ANY" logException="false" enableNotifications="false">
+      <logger level="ERROR" category="${app.logCategory}.consumer" message="#[output application/java --- 'CONSUMER_ROLLBACK eventId=' ++ (vars.eventId default 'unknown') ++ ' corrId=' ++ (vars.corrId default correlationId) ++ ' type=' ++ error.errorType.identifier]"/>
+    </on-error-propagate>
+  </error-handler>
+</mule>

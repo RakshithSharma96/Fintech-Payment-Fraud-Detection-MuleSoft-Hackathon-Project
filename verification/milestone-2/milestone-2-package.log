@@ -1,0 +1,111 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------< com.npn.fintech:payment-fraud-detection >---------------
+[INFO] Building payment-fraud-detection 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------[ mule-application ]--------------------------
+[INFO] 
+[INFO] --- mule:4.10.1:validate (default-validate) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:initialize (default-initialize) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:generate-sources (default-generate-sources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:process-sources (default-process-sources) @ payment-fraud-detection ---
+[INFO] About to fetch required dependencies for artifact: com.npn.fintech:payment-fraud-detection:pom:1.0.0. This may take a while...
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ payment-fraud-detection ---
+[INFO] Copying 12 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- mule:4.10.1:process-resources (default-process-resources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ payment-fraud-detection ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- mule:4.10.1:compile (default-compile) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:process-classes (default-process-classes) @ payment-fraud-detection ---
+[INFO] Building factory for Mule Runtime version 4.12.0
+[INFO] Building from Mule Runtime distribution in 'C:\Users\raksh\Desktop\Mulesoft Hackathon Project\target\build-dependencies\mule-framework-latest-bundle-2.0.0'
+[WARNING] Ignoring duplicated module 'com.mulesoft.connectivity.mule.api'
+[WARNING] Ignoring duplicated module 'org.mule.runtime.metadata.model.persistence'
+[INFO] Loaded AbstractMuleFrameworkBuilderFactory implementation 'org.mule.framework.impl.builder.DefaultMuleFrameworkBuilderFactory' from classloader 'java.net.URLClassLoader@1c972ae6'
+[INFO] About to fetch required dependencies for artifact: com.npn.fintech:payment-fraud-detection:pom:1.0.0. This may take a while...
+[INFO] Loaded AbstractDataTypeBuilderFactory implementation 'org.mule.runtime.core.api.metadata.DefaultDataTypeBuilderFactory' from classloader 'java.net.URLClassLoader@1c972ae6'
+[WARNING] Component 'console' in extension 'APIKit' already has a 'config-ref' parameter defined. Skipping ConfigRefDeclarationEnricher for it.
+[WARNING] Component 'router' in extension 'APIKit' already has a 'config-ref' parameter defined. Skipping ConfigRefDeclarationEnricher for it.
+[WARNING] [global-config.xml:31]: Invalid configuration found for parameter 'file': config-${env}.yaml
+[WARNING] [global-config.xml:32]: Invalid configuration found for parameter 'file': ${secure.file}
+[WARNING] [global-config.xml:40]: Connection is not secure. Should use `HTTPS`
+[INFO] 
+[INFO] --- mule:4.10.1:generate-test-sources (default-generate-test-sources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ payment-fraud-detection ---
+[INFO] Copying 1 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- mule:4.10.1:generate-test-resources (default-generate-test-resources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ payment-fraud-detection ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- mule:4.10.1:test-compile (default-test-compile) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- munit:3.7.3:test (test) @ payment-fraud-detection ---
+[INFO] Run of munit-maven-plugin skipped. Property [skipMunitTests] was set to true
+[INFO] 
+[INFO] >>> munit:3.7.3:coverage-report (test) > [munit]test @ payment-fraud-detection >>>
+[INFO] 
+[INFO] --- mule:4.10.1:validate (default-validate) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:initialize (default-initialize) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:generate-sources (default-generate-sources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:process-sources (default-process-sources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ payment-fraud-detection ---
+[INFO] Copying 12 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- mule:4.10.1:process-resources (default-process-resources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ payment-fraud-detection ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- mule:4.10.1:compile (default-compile) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:process-classes (default-process-classes) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- mule:4.10.1:generate-test-sources (default-generate-test-sources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ payment-fraud-detection ---
+[INFO] Copying 1 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- mule:4.10.1:generate-test-resources (default-generate-test-resources) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ payment-fraud-detection ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- mule:4.10.1:test-compile (default-test-compile) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ payment-fraud-detection ---
+[INFO] 
+[INFO] --- munit:3.7.3:test (test) @ payment-fraud-detection ---
+[INFO] Run of munit-maven-plugin skipped. Property [skipMunitTests] was set to true
+[INFO] 
+[INFO] <<< munit:3.7.3:coverage-report (test) < [munit]test @ payment-fraud-detection <<<
+[INFO] 
+[INFO] 
+[INFO] --- munit:3.7.3:coverage-report (test) @ payment-fraud-detection ---
+[INFO] Generating: Json report...
+[INFO] Generating: HTML report...
+[INFO] 
+[INFO] --- mule:4.10.1:package (default-package) @ payment-fraud-detection ---
+[INFO] Building zip: C:\Users\raksh\Desktop\Mulesoft Hackathon Project\target\payment-fraud-detection-1.0.0-mule-application.jar
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  14.115 s
+[INFO] Finished at: 2026-10-11T16:09:09+05:30
+[INFO] ------------------------------------------------------------------------

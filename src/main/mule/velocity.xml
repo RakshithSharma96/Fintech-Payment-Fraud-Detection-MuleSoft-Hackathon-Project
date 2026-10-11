@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+ xmlns:os="http://www.mulesoft.org/schema/mule/os"
+ xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+  <sub-flow name="velocity-update-sf">
+    <try doc:name="Track card velocity">
+      <os:retrieve objectStore="velocityStore" key="#['vel-' ++ vars.event.card.cardToken]" target="velocityHistory">
+        <os:default-value>#[[]]</os:default-value>
+      </os:retrieve>
+      <set-variable variableName="velocityNext" value="#[output application/java --- modules::Velocity::advance(vars.velocityHistory, vars.eventId, vars.velocityNowEpoch default (now() as Number {unit: 'seconds'}), p('risk.velocityWindowSeconds') as Number)]"/>
+      <os:store objectStore="velocityStore" key="#['vel-' ++ vars.event.card.cardToken]">
+        <os:value>#[vars.velocityNext]</os:value>
+      </os:store>
+      <set-variable variableName="velocityCount" value="#[sizeOf(vars.velocityNext)]"/>
+      <error-handler><on-error-propagate type="ANY" logException="false" enableNotifications="false">
+        <raise-error type="APP:VELOCITY_UNAVAILABLE" description="Velocity tracking unavailable"/>
+      </on-error-propagate></error-handler>
+    </try>
+  </sub-flow>
+</mule>
