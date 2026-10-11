@@ -1,0 +1,14 @@
+{
+  "minMuleVersion": "4.12.0",
+  "javaSpecificationVersions": [
+    "17"
+  ],
+  "requiredProduct": "MULE_EE",
+  "configs": [
+    "global-config.xml",
+    "payment-events-api.xml"
+  ],
+  "secureProperties": [
+    "secure.key"
+  ]
+}

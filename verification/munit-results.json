@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-11",
+  "timezone": "Asia/Calcutta",
+  "runtime": "Mule EE 4.12.0",
+  "jdk": "Studio bundled Java 17.0.12",
+  "munit": "3.7.3",
+  "tests": 29,
+  "errors": 0,
+  "failures": 0,
+  "component_coverage_percent": 82.5,
+  "build": "PASS",
+  "test_cases": [
+    {
+      "name": "official-sample-202-and-real-high-queue",
+      "result": "PASS"
+    },
+    {
+      "name": "decision-boundaries",
+      "result": "PASS"
+    },
+    {
+      "name": "rule-R02-geo-mismatch-in-isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-transactionId-400",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-cardToken-400",
+      "result": "PASS"
+    },
+    {
+      "name": "duplicate-event-409-preserves-original-reservation",
+      "result": "PASS"
+    },
+    {
+      "name": "pan-in-customer-name-400",
+      "result": "PASS"
+    },
+    {
+      "name": "band-29-is-LOW",
+      "result": "PASS"
+    },
+    {
+      "name": "sample-event-scores-82-HIGH",
+      "result": "PASS"
+    },
+    {
+      "name": "band-30-is-MEDIUM",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-amount-400",
+      "result": "PASS"
+    },
+    {
+      "name": "scoring-failure-fails-safe-to-review",
+      "result": "PASS"
+    },
+    {
+      "name": "rule-R05-odd-hour-in-isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-merchantId-400",
+      "result": "PASS"
+    },
+    {
+      "name": "malformed-json-400",
+      "result": "PASS"
+    },
+    {
+      "name": "rule-R01-amount-in-isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "masking-and-sanitising",
+      "result": "PASS"
+    },
+    {
+      "name": "unknown-field-400",
+      "result": "PASS"
+    },
+    {
+      "name": "negative-amount-400",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-currency-400",
+      "result": "PASS"
+    },
+    {
+      "name": "full-pan-in-masked-field-400",
+      "result": "PASS"
+    },
+    {
+      "name": "rule-R03-velocity-in-isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "publish-failure-503-releases-dedupe",
+      "result": "PASS"
+    },
+    {
+      "name": "rule-R04-merchant-category-in-isolation",
+      "result": "PASS"
+    },
+    {
+      "name": "low-risk-202-real-standard-queue",
+      "result": "PASS"
+    },
+    {
+      "name": "band-60-is-HIGH",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-event-id-400",
+      "result": "PASS"
+    },
+    {
+      "name": "missing-channel-400",
+      "result": "PASS"
+    },
+    {
+      "name": "unsupported-currency-400",
+      "result": "PASS"
+    }
+  ],
+  "scope": "Initial intake only. No DB, MailHog, Docker or deployment verification."
+}

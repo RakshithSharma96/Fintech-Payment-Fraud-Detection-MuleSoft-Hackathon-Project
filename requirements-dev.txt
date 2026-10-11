@@ -1,0 +1,2 @@
+# Optional static validation tooling only. The application runtime is Mule.
+jsonschema==4.25.1

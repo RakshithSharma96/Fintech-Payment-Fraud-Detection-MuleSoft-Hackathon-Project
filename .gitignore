@@ -1,0 +1,12 @@
+target/
+.mule/
+.studio/
+.local/
+.env
+*.key
+*.jar
+src/main/resources/secure-*.yaml
+!src/main/resources/secure-*.example.yaml
+__pycache__/
+tools/
+

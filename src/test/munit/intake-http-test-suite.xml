@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+  <munit:config name="intake-http-test-suite"/>
+  <http:request-config name="Intake_Test_Client"><http:request-connection host="127.0.0.1" port="${http.port}"/></http:request-config>
+<munit:test name="official-sample-202-and-real-high-queue">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" target="response" targetValue="#[message]">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json')]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request><vm:consume config-ref="VM_Config" queueName="${vm.queue.high}" timeout="2"/></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[vars.response.attributes.statusCode]" is="#[MunitTools::equalTo(202)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskScore]" is="#[MunitTools::equalTo(82)]"/><munit-tools:assert-that expression="#[vars.response.payload.riskBand]" is="#[MunitTools::equalTo('HIGH')]"/><munit-tools:assert-that expression="#[vars.response.payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('intake-test-corr')]"/><munit-tools:assert-that expression="#[payload.scoring.ruleHits.ruleCode == ['R01_AMOUNT', 'R02_GEO_MISMATCH', 'R04_MERCHANT_CAT']]" is="#[MunitTools::equalTo(true)]"/></munit:validation>
+  </munit:test>
+<munit:test name="duplicate-event-409-preserves-original-reservation">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json')]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json')]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(409)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('DUPLICATE_EVENT')]"/></munit:validation>
+  </munit:test>
+<munit:test name="malformed-json-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output text/plain --- '{bad json']]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="negative-amount-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') update { case a at .transaction.amount -> -5 }]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="unsupported-currency-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') update { case c at .transaction.currency -> "XYZ" }]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="missing-event-id-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') - 'eventId']]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="full-pan-in-masked-field-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') update { case c at .card.maskedCardNumber -> "4111111111114417" }]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="pan-in-customer-name-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') update { case n at .customer.name -> "4111 1111 1111 4417" }]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="unknown-field-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json') ++ {cardNumber: "4111111111114417"}]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('INVALID_PAYMENT_EVENT')]"/><munit-tools:assert-that expression="#[write(payload, 'application/json')]" is="#[MunitTools::not(MunitTools::containsString('4111'))]"/></munit:validation>
+  </munit:test>
+<munit:test name="publish-failure-503-releases-dedupe">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:behavior><munit-tools:mock-when processor="vm:publish"><munit-tools:then-return><munit-tools:error typeId="VM:QUEUE_TIMEOUT"/></munit-tools:then-return></munit-tools:mock-when></munit:behavior>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+      <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json', 'application/json')]]]></http:body>
+      <http:headers>#[{'Content-Type': 'application/json', 'X-Correlation-ID': 'intake-test-corr'}]</http:headers>
+      <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request><os:contains key="PAY-EVT-2026-884512" objectStore="dedupStore" target="reserved"/></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(503)]"/><munit-tools:assert-that expression="#[payload.errorCode]" is="#[MunitTools::equalTo('SERVICE_UNAVAILABLE')]"/><munit-tools:assert-that expression="#[vars.reserved]" is="#[MunitTools::equalTo(false)]"/><munit-tools:verify-call processor="vm:publish" times="4"/></munit:validation>
+  </munit:test>
+<munit:test name="missing-transactionId-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .transaction -> x - 'transactionId' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="missing-amount-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .transaction -> x - 'amount' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="missing-currency-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .transaction -> x - 'currency' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="missing-cardToken-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .card -> x - 'cardToken' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="missing-channel-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .transaction -> x - 'channel' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="missing-merchantId-400">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" >
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case x at .merchant -> x - 'merchantId' }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request></munit:execution>
+    <munit:validation><munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(400)]"/></munit:validation>
+    </munit:test><munit:test name="low-risk-202-real-standard-queue">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution><http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" target="lowResponse" targetValue="#[message]">
+    <http:body><![CDATA[#[output application/json --- readUrl('classpath://payment-event.json','application/json') update { case a at .transaction.amount -> 1500 case m at .merchant.merchantCountry -> "IN" case g at .device.geoCountry -> "IN" case c at .merchant.merchantCategory -> "GROCERY" }]]]></http:body>
+    <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'intake-test-corr'}]</http:headers>
+    <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+    </http:request><vm:consume config-ref="VM_Config" queueName="${vm.queue.standard}" timeout="2"/></munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.lowResponse.attributes.statusCode]" is="#[MunitTools::equalTo(202)]"/>
+      <munit-tools:assert-that expression="#[vars.lowResponse.payload.riskScore]" is="#[MunitTools::equalTo(0)]"/>
+      <munit-tools:assert-that expression="#[payload.scoring.riskBand]" is="#[MunitTools::equalTo('LOW')]"/>
+    </munit:validation></munit:test>
+</mule>
