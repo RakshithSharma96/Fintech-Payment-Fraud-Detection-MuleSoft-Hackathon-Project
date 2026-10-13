@@ -32,6 +32,9 @@ consumer:
   transient:
     maxRetries: "720"
     delayMs: "5000"
+persistence:
+  initialState: "stopped"
+  concurrency: "4"
 retry:
   queue:
     max: "3"
@@ -65,7 +68,11 @@ risk:
     blockMin: "85"
   failSafeScore: "45"
 alert:
+  initialState: "stopped"
   distributionList: "risk-team@example.com"
+  delivery:
+    frequencyMs: "1000"
+    leaseSeconds: "180"
   throttle:
     windowSeconds: "300"
     storeTtlMinutes: "60"

@@ -1,146 +1,307 @@
-# Payment Fraud Detection - Mule intake and asynchronous scoring
+# Payment Fraud Detection System
 
-Milestones 1 and 2 implement intake, live velocity tracking and asynchronous
-scoring with customer enrichment and final decisions. Docker, live MySQL testing,
-MailHog, persistence, email and deployment remain deferred. Consumers default to
-stopped so the existing intake runs independently. When enabled, they hand final
-decisions to a persistent queue for the later persistence milestone.
+A MuleSoft-based payment fraud detection application that ingests payment events, evaluates transaction risk, and processes suspicious transactions through asynchronous workflows, MySQL persistence, and email alerts.
 
-The project uses Mule 4.12.0 Enterprise and Java 17, matching the installed
-Anypoint Studio runtime. It uses HTTP, RAML/APIkit, DataWeave, Object Store,
-VM queues, Secure Properties and MUnit. MySQL and Email dependencies are present
-for later milestones. A MySQL profile connection is configured with deployment
-failure disabled; the stopped consumers do not execute queries during intake.
+## Overview
 
-## Run in Anypoint Studio
+The Payment Fraud Detection System is built using **Mule 4, RAML, DataWeave, MySQL, and MUnit**. It provides an API for receiving payment events and a processing pipeline for identifying potentially fraudulent transactions.
 
-1. File > Import > Anypoint Studio > Anypoint Studio project from File System.
-   Select this project folder. If the importer requires an archive, use
-   File > Import > General > Existing Projects into Workspace with this folder.
-2. Select Mule Server 4.12.0 EE and the bundled Java 17 JDK. Maven > Update Project.
-   Do not generate APIkit flows: they already exist in `src/main/mule`.
-3. Local encrypted properties and the local key have already been generated on
-   this machine. On a fresh clone, run `./scripts/setup-local.ps1 -SecureToolJar
-   <absolute-path-to-official-secure-properties-tool.jar>` from PowerShell 7.
-   The tool creates ignored secrets; it does not start Docker or connect to DB/SMTP.
-4. Run > Run Configurations > Mule Application > Arguments > VM arguments:
-   add `-M-Dsecure.key=<contents of .local/secure.key>`. Never commit or share the key.
-   No Anypoint account or Docker is needed for intake.
-5. Run As > Mule Application. Wait for `DEPLOYED` before sending requests.
+The application combines request validation, duplicate-event detection, configurable risk rules, asynchronous processing, database persistence, and alert delivery. This separation allows the intake API to acknowledge valid events without waiting for all downstream processing to finish.
 
-```powershell
-Invoke-RestMethod -Method Post -Uri http://localhost:8081/api/payments/events `
-  -ContentType application/json -Headers @{'X-Correlation-ID'='demo-corr-1'} `
-  -Body (Get-Content ./examples/payment-event.json -Raw)
+## Key Features
+
+- **REST API:** Accepts payment events through an HTTP endpoint defined using RAML.
+- **Input validation:** Rejects malformed requests, missing required fields, invalid transaction amounts, unsupported currencies, and other invalid input.
+- **Duplicate detection:** Identifies previously received event IDs and rejects duplicate submissions.
+- **Risk evaluation:** Applies configurable rules and scoring logic to identify transactions requiring further review.
+- **Asynchronous processing:** Uses Mule VM queues to separate request intake from downstream scoring and processing.
+- **MySQL persistence:** Stores payment-fraud event records and supports database-backed processing.
+- **Email notifications:** Uses the Mule Email Connector to send alerts for qualifying high-risk transactions and fraud decisions.
+- **Secure configuration:** Supports Mule Secure Configuration Properties and externalized configuration.
+- **Automated testing:** Includes MUnit test suites for fraud rules, API intake, processing, persistence, alerting, and error scenarios.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Integration platform | Mule Runtime 4.12.x |
+| API definition | RAML / APIkit |
+| Transformation | DataWeave 2.0 |
+| Language and runtime | Java 17 |
+| Build system | Maven |
+| Database | MySQL |
+| Database integration | Mule Database Connector |
+| Asynchronous messaging | Mule VM Connector |
+| Duplicate detection and state | Mule Object Store |
+| Email notifications | Mule Email Connector |
+| Testing | MUnit 3.7.3 |
+| Development environment | Anypoint Studio |
+
+## Architecture
+
+The application follows an event-driven integration approach.
+
+```text
+Payment Event
+     |
+     v
+HTTP API / APIkit
+     |
+     v
+Request Validation
+     |
+     v
+Duplicate Event Detection
+     |
+     v
+Event Intake and Queueing
+     |
+     v
+Asynchronous Risk Processing
+     |
+     v
+Risk Evaluation and Decision
+     |
+     +--------------------+
+     |                    |
+     v                    v
+MySQL Persistence    Alert Processing
+                          |
+                          v
+                    Email Notification
 ```
 
-Expected on a fresh event ID: HTTP 202, score 82, HIGH,
-`QUEUED_FOR_REVIEW`, and the same correlation ID in the body/header.
-Repeat the event: HTTP 409. Change the event ID for another accepted request.
-Malformed JSON, missing required fields, negative/zero amounts, unsupported
-currencies and PAN-like data produce HTTP 400 without echoing values.
+The diagram represents the logical processing pipeline. Actual execution, retries, and alert delivery depend on the configured flows and runtime state.
 
-The endpoint uses `/api` as its listener base path; the RAML resource is
-`POST /payments/events`. HIGH events use `payments-high-q`; other bands use
-`payments-std-q`. A failure to confirm publication returns HTTP 503 after
-bounded retries and releases the request's own deduplication reservation.
-There is no fallback from HIGH to standard because official priority routing
-is required. A publish timeout can have an ambiguous outcome; later persistence
-must be idempotent by event ID.
+### Processing Workflow
 
-## Build and test
+1. **Receive:** The API accepts a payment event over HTTP.
+2. **Validate:** Required fields, data types, and business constraints are checked.
+3. **Deduplicate:** The system checks the event ID to prevent duplicate processing.
+4. **Queue:** Valid events are passed into the asynchronous processing workflow.
+5. **Evaluate:** Configured risk rules and scoring logic determine the transaction's risk classification.
+6. **Persist:** The application records relevant event and processing information in MySQL.
+7. **Alert:** Qualifying high-risk transactions or fraud decisions are routed through the alerting workflow.
 
-```powershell
-./scripts/maven.ps1 clean test
-./scripts/maven.ps1 package -DskipMunitTests
+An HTTP acceptance response indicates that the event was accepted for processing; it does not by itself guarantee that database persistence or email delivery has completed.
+
+## API Reference
+
+### Submit a Payment Event
+
+| Property | Value |
+|---|---|
+| Method | `POST` |
+| Local endpoint | `http://localhost:8081/api/payments/events` |
+| Content type | `application/json` |
+| Successful intake response | `202 Accepted` |
+
+### Sample Request
+
+```json
+{
+  "eventId": "PAY-EVT-2026-884512",
+  "eventTimestamp": "2026-09-11T14:22:07+05:30",
+  "transaction": {
+    "transactionId": "TXN-99120455",
+    "amount": 248500.00,
+    "currency": "INR",
+    "channel": "ONLINE",
+    "entryMode": "CARD_NOT_PRESENT"
+  },
+  "card": {
+    "cardToken": "TKN-example-4d9a77",
+    "maskedCardNumber": "XXXXXXXXXXXX4417",
+    "cardType": "CREDIT",
+    "issuingCountry": "IN"
+  },
+  "customer": {
+    "customerId": "CUST-77219",
+    "name": "Example Customer",
+    "email": "customer@example.com",
+    "riskProfile": "STANDARD"
+  },
+  "merchant": {
+    "merchantId": "MER-5581",
+    "merchantName": "Example Online Store",
+    "merchantCategory": "ELECTRONICS",
+    "merchantCountry": "SG"
+  },
+  "device": {
+    "ipAddress": "203.0.113.77",
+    "deviceId": "DEV-example",
+    "geoCountry": "SG"
+  }
+}
 ```
 
-The helper selects the detected bundled JDK and local Maven. On another machine
-set `FRAUD_JAVA_HOME` to a Java 17 JDK and `FRAUD_MAVEN_CMD` to `mvn.cmd`.
-For direct Maven use, set `JAVA_HOME` to Java 17 and `FRAUD_SECURE_KEY` to the
-local key first. Do not use Java 26 on PATH. MUnit receives the key through an
-environment variable, not a hardcoded Maven value.
+Use the RAML definition in the project as the source of truth for the complete request schema and permitted values. The example is intended for development and uses illustrative data.
 
-The HTTP suite starts the real listener, checks APIkit validation, consumes the
-actual HIGH VM queue, checks duplicate handling and injects a publish failure.
-The scoring suites exercise all rules, boundaries, live velocity and expiry,
-MySQL enrichment with mocks, final decisions and VM transaction rollback.
-They also run an actual asynchronous HIGH listener with MySQL mocked. All
-original Milestone 1 tests remain in the regression run.
-Coverage is written under `target/site/munit`; the milestone report records the
-actual results. Studio's GUI run must be verified separately.
+### Response Behaviour
 
-Optional static checks (these do not execute Mule): install
-`python -m pip install -r requirements-dev.txt`, then run
-`python scripts/verify-static.py`. This checks XML, schema cases, flow references
-and artifact config files; the application itself contains no Python backend.
+| Scenario | Expected behaviour |
+|---|---|
+| Valid payment event | Accepted for processing |
+| Duplicate event ID | Rejected with `409 Conflict` |
+| Invalid request or malformed JSON | Rejected with `400 Bad Request` |
 
-## Milestone 2 configuration
+The exact response body and error format are defined by the API implementation.
 
-The default run arguments remain compatible with Milestone 1. Intake serializes
-the complete per-card Object Store read/modify/write sequence using one HTTP
-source (`maxConcurrency="1"`). Velocity counts distinct event IDs received in
-the configured window, using explicit epoch seconds. A retry of a failed publish
-does not count the same ID again within that window. Valid attempts whose queue
-publication fails remain counted once, conservatively reflecting suspicious
-activity. Consumer redelivery does not increment velocity again.
+## Project Structure
 
-To change rule thresholds without redeployment, copy `examples/risk-policy.json`
-to a writable external path and supply `-M-Drisk.policyFile=<absolute JSON path>`
-in the Studio Mule run arguments (quote paths with spaces). The file is read for
-each intake. Changes to amount/velocity limits, weights, categories, default
-hours and band/decision boundaries apply to the next request. Invalid or missing
-configured files produce 503 and no publication; they never silently use an old
-policy. Replace the file atomically during updates. With the default empty path,
-the existing YAML properties remain the source of rule settings.
+```text
+payment-fraud-detection/
+├── src/
+│   ├── main/
+│   │   ├── mule/
+│   │   │   ├── global-config.xml
+│   │   │   ├── payment-events-api.xml
+│   │   │   ├── velocity.xml
+│   │   │   ├── scoring-consumer.xml
+│   │   │   ├── persistence.xml
+│   │   │   └── alerting.xml
+│   │   └── resources/
+│   │       ├── config-dev.yaml
+│   │       ├── modules/
+│   │       └── sql/
+│   └── test/
+│       └── munit/
+├── scripts/
+│   ├── setup-local.ps1
+│   ├── maven.ps1
+│   ├── verify-static.py
+│   └── test-milestone-3.ps1
+├── mule-artifact.json
+├── pom.xml
+└── README.md
+```
 
-Each queued event includes its validated risk-config snapshot. The consumer uses
-that snapshot so a later rule-file change cannot rewrite the decision policy for
-an already accepted event. Legacy Milestone 1 queue envelopes without a snapshot
-load the currently configured rules. Store TTL/window and queue/concurrency
-properties are startup settings; changing those requires restarting the app.
+The tree shows the principal application files; additional test, SQL, and validation utilities may be present in the repository.
 
-After the deferred MySQL setup, enable consumers with
-`-M-Dconsumer.initialState=started`. HIGH uses 8 consumers, standard uses 4.
-They query `customer_risk_profile`, rescore with database usual hours/watchlist,
-then decide APPROVE, REVIEW or BLOCK. Missing/invalid profiles use safe defaults,
-record `enrichmentIncomplete` and force REVIEW. An intake or final scoring error
-also forces REVIEW. HIGH events found on standard are logged and transactionally
-rerouted to HIGH before any profile query.
+## Local Setup
 
-Final envelopes go to `payments-decisions-q`; they retain event/correlation IDs,
-input scoring, profile, rule hits, decision and `alertRequired`. SQL lookup is
-outside the local VM transaction. Consume and next VM publication share that
-transaction, so an error propagates and rolls back consumption. No persistence
-or email delivery is claimed at this stage; do not drain the decisions queue
-until the Milestone 3 persistence consumer exists.
+### Prerequisites
 
-MUnit uses a separate live-rule test file in `.local`, a 2-second velocity TTL,
-a 1-second expiry sweep and test-only started flow state. Source activation is
-controlled by each test; these settings do not change normal Studio defaults.
-Mocked database operations explicitly supply their target variable values.
+Install and configure the following before running the application:
 
-See `docs/milestone-2.md` and `verification/milestone-2` for current evidence.
+- Anypoint Studio with a compatible Mule 4 runtime.
+- Java 17.
+- MySQL Server.
+- MailHog or another SMTP server for local email testing.
+- Access to the Maven dependencies and MuleSoft repositories required by the project.
 
-## Current limits and next work
+### 1. Prepare the Project
 
-- MySQL connector/query wiring is implemented and tested with mocks; a live
-  MySQL run and Studio GUI consumer activation remain unverified.
-- Intake runs with `maxConcurrency="1"` while reservation/publish behavior is
-  established. It is not a demonstrated production latency/throughput configuration.
-- Dedupe keys persist with a 24-hour TTL; this does not provide permanent
-  idempotency. Deleting `.mule` loses local store/queue evidence.
-- Separate queues do not establish strict scheduling precedence. VM persistence,
-  restart behavior and eventual DB/DLQ delivery still need reliability testing.
-- Live rule-file reads support threshold changes; other YAML properties remain
-  startup settings. Multi-instance locking and crash/restart tests are pending.
-- Domain-based Studio execution is a later technical-standard deliverable.
-- HTTP traffic/debug logging must remain disabled. Validation errors contain
-  static messages only; application logs never include raw payment payloads.
-- Docker Compose and SQL are preparation only. Do not run them until the deferred
-  database/mail setup step. Passwords live in ignored `.env` and encrypted YAML.
+Clone or open the repository in Anypoint Studio and import it as an existing Mule project.
 
-See `docs/requirements.md` for requirement mapping and
-`docs/milestone-1.md` for the historical Milestone 1 evidence. Milestone 3 will
-add idempotent database persistence and alerting; Milestone 4 will finish poison
-message/DLQ handling and crash/restart reliability verification.
+Open a PowerShell terminal in the project root.
+
+### 2. Configure the Environment
+
+Review `src/main/resources/config-dev.yaml` and the global Mule configuration.
+
+Configure the database connection, SMTP host and port, and other environment-specific values for your local environment. Use `scripts/setup-local.ps1` where applicable for the project's local setup process.
+
+Initialize the database using the SQL scripts in `src/main/resources/sql/`, following the appropriate schema and migration requirements for your existing database.
+
+Start MySQL and the local SMTP service before testing flows that depend on them.
+
+**Do not commit database passwords, SMTP credentials, encryption keys, or other secrets to Git.** Keep sensitive values in local configuration or secure property mechanisms.
+
+### 3. Run the Application
+
+In Anypoint Studio:
+
+1. Import and open the project.
+2. Verify that the Maven dependencies resolve successfully.
+3. Start the required local services.
+4. Run the project as a Mule application.
+5. Send a payment event to the configured local API endpoint.
+
+The default endpoint documented for local testing is:
+
+```text
+http://localhost:8081/api/payments/events
+```
+
+Confirm the port and base path against the active runtime configuration.
+
+### 4. Test the API
+
+Example PowerShell request:
+
+```powershell
+$body = @{
+    eventId = "PAY-TEST-001"
+    eventTimestamp = "2026-09-11T14:22:07+05:30"
+    transaction = @{
+        transactionId = "TXN-TEST-001"
+        amount = 248500.00
+        currency = "INR"
+        channel = "ONLINE"
+        entryMode = "CARD_NOT_PRESENT"
+    }
+    card = @{
+        cardToken = "TKN-TEST-001"
+        maskedCardNumber = "XXXXXXXXXXXX4417"
+        cardType = "CREDIT"
+        issuingCountry = "IN"
+    }
+    customer = @{
+        customerId = "CUST-TEST-001"
+        name = "Test Customer"
+        email = "customer@example.com"
+        riskProfile = "STANDARD"
+    }
+    merchant = @{
+        merchantId = "MER-TEST-001"
+        merchantName = "Example Online Store"
+        merchantCategory = "ELECTRONICS"
+        merchantCountry = "SG"
+    }
+    device = @{
+        ipAddress = "203.0.113.77"
+        deviceId = "DEV-TEST-001"
+        geoCountry = "SG"
+    }
+} | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod `
+    -Uri "http://localhost:8081/api/payments/events" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body $body
+```
+
+Use unique event IDs for independent tests. Risk outcomes depend on the configured rules, and successful intake does not guarantee a high-risk classification.
+
+## Automated Testing
+
+The project contains MUnit test suites covering the intake API, fraud rules, queue processing, persistence, alerts, and validation/error paths.
+
+Run the tests through the configured Maven setup. For example, from PowerShell:
+
+```powershell
+.\scripts\maven.ps1 clean test
+```
+
+Review the script and its accepted arguments if your local Maven wrapper uses a different invocation.
+
+A successful test run should report `BUILD SUCCESS` with no failed or errored tests. Test coverage reports are generated by the configured MUnit coverage process.
+
+## Security Considerations
+
+- Keep sensitive configuration outside version control.
+- Use secure properties or environment-specific variables for credentials.
+- Preserve card masking and avoid logging full card numbers or unnecessary customer data.
+- Validate inbound data before processing.
+- Apply appropriate database privileges to the application account.
+- Configure production authentication, authorization, TLS, and operational monitoring before exposing the API publicly.
+
+## Current Status
+
+The project includes the local Mule application, asynchronous processing, fraud scoring, MySQL persistence, email alerting, and MUnit test suites.
+
+Local functional and automated testing has been performed. CloudHub deployment and its external service connections remain a separate configuration and verification step.
+
+

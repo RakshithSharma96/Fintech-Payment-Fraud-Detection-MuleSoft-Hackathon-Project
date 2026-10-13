@@ -47,7 +47,7 @@ output application/json
   </munit:before-test>
 
   <!-- ============ R01 amount ============ -->
-  <munit:test name="rule-R01-amount-in-isolation" description="Amount rule fires only ABOVE the limit">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="rule-R01-amount-in-isolation" description="Amount rule fires only ABOVE the limit">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -63,7 +63,7 @@ output application/json
   </munit:test>
 
   <!-- ============ R02 geo ============ -->
-  <munit:test name="rule-R02-geo-mismatch-in-isolation" description="Fires when merchant/geo country differs from issuing country">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="rule-R02-geo-mismatch-in-isolation" description="Fires when merchant/geo country differs from issuing country">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -81,7 +81,7 @@ output application/json
   </munit:test>
 
   <!-- ============ R03 velocity ============ -->
-  <munit:test name="rule-R03-velocity-in-isolation" description="Fires when count is MORE than the max">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="rule-R03-velocity-in-isolation" description="Fires when count is MORE than the max">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -97,7 +97,7 @@ output application/json
   </munit:test>
 
   <!-- ============ R04 merchant category ============ -->
-  <munit:test name="rule-R04-merchant-category-in-isolation" description="High risk MCC (case-insensitive) fires; grocery does not">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="rule-R04-merchant-category-in-isolation" description="High risk MCC (case-insensitive) fires; grocery does not">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -113,7 +113,7 @@ output application/json
   </munit:test>
 
   <!-- ============ R05 odd hour ============ -->
-  <munit:test name="rule-R05-odd-hour-in-isolation" description="03:xx and 00:xx fire, 14:xx and 23:xx (boundary) do not">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="rule-R05-odd-hour-in-isolation" description="03:xx and 00:xx fire, 14:xx and 23:xx (boundary) do not">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -135,7 +135,7 @@ output application/json
   </munit:test>
 
   <!-- ============ band boundaries: one test each ============ -->
-  <munit:test name="band-29-is-LOW"><munit:execution>
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="band-29-is-LOW"><munit:execution>
     <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
 output application/json
@@ -143,7 +143,7 @@ output application/json
 { b: RiskRules::band(29, vars.cfg) }]]></ee:set-payload></ee:message></ee:transform></munit:execution>
     <munit:validation><munit-tools:assert-that expression="#[payload.b]" is="#[MunitTools::equalTo('LOW')]"/></munit:validation></munit:test>
 
-  <munit:test name="band-30-is-MEDIUM"><munit:execution>
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="band-30-is-MEDIUM"><munit:execution>
     <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
 output application/json
@@ -154,7 +154,7 @@ output application/json
       <munit-tools:assert-that expression="#[payload.top]" is="#[MunitTools::equalTo('MEDIUM')]"/>
     </munit:validation></munit:test>
 
-  <munit:test name="band-60-is-HIGH"><munit:execution>
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="band-60-is-HIGH"><munit:execution>
     <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
 output application/json
@@ -165,7 +165,7 @@ output application/json
       <munit-tools:assert-that expression="#[payload.max]" is="#[MunitTools::equalTo('HIGH')]"/>
     </munit:validation></munit:test>
 
-  <munit:test name="decision-boundaries"><munit:execution>
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="decision-boundaries"><munit:execution>
     <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
 output application/json
@@ -180,7 +180,7 @@ output application/json
     </munit:validation></munit:test>
 
   <!-- ============ acceptance criteria #2: amount + geography => HIGH. Sample payload => 82 ============ -->
-  <munit:test name="sample-event-scores-82-HIGH" description="Sample from the brief: amount + geo + electronics = 82 => HIGH">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="sample-event-scores-82-HIGH" description="Sample from the brief: amount + geo + electronics = 82 => HIGH">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -197,7 +197,7 @@ var r = RiskRules::evaluate(e, { velocityCount: 1 }, vars.cfg)
   </munit:test>
 
   <!-- ============ negative scenario 5: scoring failure fails SAFE to REVIEW ============ -->
-  <munit:test name="scoring-failure-fails-safe-to-review">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="scoring-failure-fails-safe-to-review">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::RiskRules
@@ -212,7 +212,7 @@ RiskRules::finalize({ event: (vars.evt update { case t at .eventTimestamp -> "no
   </munit:test>
 
   <!-- ============ negative scenario 10: data protection ============ -->
-  <munit:test name="masking-and-sanitising">
+  <munit:test ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm1']" tags="m1" name="masking-and-sanitising">
     <munit:execution>
       <ee:transform><ee:message><ee:set-payload><![CDATA[%dw 2.0
 import modules::Masking

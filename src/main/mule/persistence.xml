@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+ xmlns:db="http://www.mulesoft.org/schema/mule/db"
+ xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+ xmlns:os="http://www.mulesoft.org/schema/mule/os"
+ xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+ http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+ http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+  <flow name="decision-persistence-flow" initialState="${persistence.initialState}">
+    <vm:listener config-ref="VM_Config" queueName="${vm.queue.decisions}" numberOfConsumers="${persistence.concurrency}" transactionalAction="ALWAYS_BEGIN" timeout="1" timeoutUnit="SECONDS"/>
+    <flow-ref name="persist-finalized-decision-sf"/>
+    <error-handler ref="persistenceErrorHandler"/>
+  </flow>
+  <sub-flow name="persist-finalized-decision-sf">
+    <set-variable variableName="persistEnvelope" value="#[output application/java --- if (payload is Object) payload else read(payload as String, 'application/json')]"/>
+    <set-variable variableName="dbDecision" value="#[output application/java --- modules::Persistence::normalized(vars.persistEnvelope)]"/>
+    <set-variable variableName="eventId" value="#[vars.dbDecision.eventId]"/>
+    <set-variable variableName="corrId" value="#[vars.dbDecision.correlationId]"/>
+    <until-successful maxRetries="${retry.db.max}" millisBetweenRetries="${retry.db.delayMs}">
+      <db:stored-procedure config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" target="persistResult" doc:name="Atomic decision rules and outbox">
+        <db:sql>{call persist_payment_decision(:eventJson, :windowSeconds, :outcome)}</db:sql>
+        <db:input-parameters>#[{eventJson:write(vars.dbDecision,'application/json'),windowSeconds:p('alert.throttle.windowSeconds') as Number}]</db:input-parameters>
+        <db:output-parameters><db:output-parameter key="outcome" type="VARCHAR"/></db:output-parameters>
+      </db:stored-procedure>
+    </until-successful>
+    <choice><when expression="#[vars.persistResult.outcome == 'INSERTED' and vars.dbDecision.alertRequired]">
+      <flow-ref name="refresh-throttle-cache-sf"/>
+    </when></choice>
+    <logger doc:name="Record decision persistence outcome" level="INFO" category="${app.logCategory}.persistence" message="#['PERSISTED eventId=' ++ vars.eventId ++ ' corrId=' ++ vars.corrId ++ ' outcome=' ++ vars.persistResult.outcome]"/>
+  </sub-flow>
+  <sub-flow name="refresh-throttle-cache-sf">
+    <try doc:name="Mirror durable throttle window in Object Store">
+      <db:select config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" target="windowRows" doc:name="Read durable throttle window">
+        <db:sql>SELECT window_id, TIMESTAMPDIFF(SECOND,'1970-01-01 00:00:00',window_end) AS window_epoch,masked_card FROM alert_card_windows WHERE card_token=:cardToken</db:sql>
+        <db:input-parameters>#[{cardToken:vars.dbDecision.cardToken}]</db:input-parameters>
+      </db:select>
+      <choice><when expression="#[(not isEmpty(vars.windowRows)) and vars.windowRows[0].window_epoch != null]">
+        <os:store objectStore="alertThrottleStore" key="#[vars.dbDecision.cardToken]">
+          <os:value>#[output application/java --- {windowId:vars.windowRows[0].window_id,windowEnd:vars.windowRows[0].window_epoch,maskedCard:vars.dbDecision.maskedCard}]</os:value>
+        </os:store>
+      </when><otherwise>
+        <os:contains objectStore="alertThrottleStore" key="#[vars.dbDecision.cardToken]" target="cachedWindow"/>
+        <choice><when expression="#[vars.cachedWindow]"><os:remove objectStore="alertThrottleStore" key="#[vars.dbDecision.cardToken]"/></when></choice>
+      </otherwise></choice>
+      <error-handler><on-error-continue logException="false" enableNotifications="false">
+        <logger level="WARN" category="${app.logCategory}.alert" message="#['THROTTLE_CACHE_UNAVAILABLE eventId=' ++ vars.eventId ++ ' corrId=' ++ vars.corrId ++ ' durable SQL state retained']"/>
+      </on-error-continue></error-handler>
+    </try>
+  </sub-flow>
+  <error-handler name="persistenceErrorHandler">
+    <on-error-propagate type="ANY" logException="false" enableNotifications="false">
+      <logger level="ERROR" category="${app.logCategory}.persistence" message="#[
+import try from dw::Runtime
+import java!java::lang::Class
+import java!java::lang::Thread
+output application/java
+fun sqlException(t) = do {
+  var clazz = try(() -&gt; Class::forName(t.^class as String, false, Thread::currentThread().contextClassLoader)).result default null
+  var ancestry = (1 to 16) reduce ((step, a = {clazz: clazz, found: false}) -&gt;
+    if (a.found or a.clazz == null) a else {
+      clazz: try(() -&gt; a.clazz.superclass).result default null,
+      found: (try(() -&gt; a.clazz.name).result default '') == 'java.sql.SQLException'
+    })
+  --- ancestry.found
+}
+var diagnostic = try(() -&gt; do {
+  var chain = (1 to 16) reduce ((step, a = {cause: error.cause, sql: null}) -&gt;
+    if (a.sql != null or a.cause == null) a
+    else if (sqlException(a.cause)) {cause: null, sql: a.cause}
+    else {cause: try(() -&gt; a.cause.cause).result default null, sql: null})
+  var sql = chain.sql
+  var raw = if (sql == null) 'SQL cause unavailable' else (try(() -&gt; sql.message as String).result default 'SQL message unavailable')
+  var safeMessage = if ([
+    'EVENT_ID_CONFLICT_OR_LEGACY_ROW', 'INVALID_ALERT_WINDOW',
+    'SQL cause unavailable', 'SQL message unavailable'
+  ] contains raw) raw else 'SQL message withheld (not allowlisted)'
+  --- {
+    eventId: modules::Masking::sanitize(vars.eventId default 'unknown'),
+    correlationId: modules::Masking::sanitize(vars.corrId default correlationId),
+    sqlMessage: (safeMessage replace /[\r\n\t]/ with ' ')[0 to 511],
+    SQLState: try(() -&gt; sql.SQLState as String).result default 'unavailable',
+    vendorErrorCode: try(() -&gt; sql.errorCode as Number).result default null
+  }
+})
+---
+try(() -&gt; 'PERSISTENCE_SQL_FAILURE ' ++ write(diagnostic.result default {
+  eventId: modules::Masking::sanitize(vars.eventId default 'unknown'),
+  correlationId: modules::Masking::sanitize(vars.corrId default correlationId),
+  sqlMessage: 'SQL diagnostic unavailable', SQLState: 'unavailable', vendorErrorCode: null
+}, 'application/json', {indent: false})).result default 'PERSISTENCE_SQL_FAILURE {&quot;eventId&quot;:&quot;unavailable&quot;,&quot;correlationId&quot;:&quot;unavailable&quot;,&quot;sqlMessage&quot;:&quot;SQL diagnostic unavailable&quot;,&quot;SQLState&quot;:&quot;unavailable&quot;,&quot;vendorErrorCode&quot;:null}'
+]"/>
+    </on-error-propagate>
+  </error-handler>
+</mule>

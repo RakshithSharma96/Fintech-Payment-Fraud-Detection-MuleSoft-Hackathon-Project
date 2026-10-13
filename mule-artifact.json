@@ -8,7 +8,9 @@
     "global-config.xml",
     "payment-events-api.xml",
     "velocity.xml",
-    "scoring-consumer.xml"
+    "scoring-consumer.xml",
+    "persistence.xml",
+    "alerting.xml"
   ],
   "secureProperties": [
     "secure.key"

@@ -52,6 +52,7 @@
       <reconnection failsDeployment="false"><reconnect frequency="2000" count="3"/></reconnection>
     </db:my-sql-connection>
   </db:config>
+  
 
   <vm:config name="VM_Config" doc:name="VM Config">
     <vm:queues>

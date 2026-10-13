@@ -1,0 +1,710 @@
+<?xml version="1.0" ?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:email="http://www.mulesoft.org/schema/mule/email" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="         http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd         http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd         http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd         http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd  http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd  http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd  http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd         http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd         http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd         http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+  <vm:config name="M3_Test_VM">
+    <vm:queues>
+      <vm:queue queueName="m3-recovery" queueType="PERSISTENT" maxOutstandingMessages="100"/>
+    </vm:queues>
+  </vm:config>
+  <munit:test tags="m3" name="m3-persist-high-normalizes-identifiers-rule-hits-and-outbox-flag" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Read durable throttle window"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="windowRows" value="#[output application/java --- [{window_id:'window-test',window_epoch:2000000000,masked_card:'XXXXXXXXXXXX4417'}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.dbDecision.riskScore]" is="#[MunitTools::equalTo(82)]"/>
+      <munit-tools:assert-that expression="#[sizeOf(vars.dbDecision.ruleHits)]" is="#[MunitTools::equalTo(3)]"/>
+      <munit-tools:assert-that expression="#[vars.dbDecision.maskedCard]" is="#[MunitTools::equalTo('XXXXXXXXXXXX4417')]"/>
+      <munit-tools:assert-that expression="#[vars.dbDecision.correlationId]" is="#[MunitTools::equalTo('m3-corr')]"/>
+      <munit-tools:assert-that expression="#[vars.dbDecision.alertRequired]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-persist-low-with-zero-children-and-no-alert" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[sizeOf(vars.dbDecision.ruleHits)]" is="#[MunitTools::equalTo(0)]"/>
+      <munit-tools:assert-that expression="#[vars.dbDecision.alertRequired]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-duplicate-redelivery-has-no-alert-or-cache-side-effect" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'DUPLICATE'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:verify-call processor="db:stored-procedure" times="2">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+      <munit-tools:verify-call processor="os:store" times="0"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-throttle-cache-mirrors-durable-window" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Read durable throttle window"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="windowRows" value="#[output application/java --- [{window_id:'window-test',window_epoch:2000000000,masked_card:'XXXXXXXXXXXX4417'}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+      <os:retrieve objectStore="alertThrottleStore" key="TKN-4d9a77e1c0" target="cached"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.cached.windowEnd]" is="#[MunitTools::equalTo(2000000000)]"/>
+      <munit-tools:assert-that expression="#[vars.cached.maskedCard]" is="#[MunitTools::equalTo('XXXXXXXXXXXX4417')]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-cache-outage-does-not-undo-durable-outbox" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Read durable throttle window"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="DB:CONNECTIVITY"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.persistResult.outcome]" is="#[MunitTools::equalTo('INSERTED')]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-legacy-finalized-envelope-without-policy-snapshot" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-variable variableName="legacy" value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}} -- ['riskConfig','alertRequired','enrichmentIncomplete']]"/>
+      <set-payload value="#[vars.legacy]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.dbDecision.policySnapshot == {}]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.dbDecision.enrichmentIncomplete]" is="#[MunitTools::equalTo(false)]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-fingerprint-stable-across-reordered-keys-hits-and-new-correlation" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:execution>
+      <set-variable variableName="first" value="#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]"/>
+      <set-variable variableName="second" value="#[output application/java --- vars.first update {case c at .correlationId -&gt; 'redelivery-corr' case h at .final.ruleHits -&gt; h[-1 to 0]}]"/>
+      <set-variable variableName="hash1" value="#[output application/java --- modules::Persistence::normalized(vars.first).decisionHash]"/>
+      <set-variable variableName="hash2" value="#[output application/java --- modules::Persistence::normalized(vars.second).decisionHash]"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.hash1 == vars.hash2]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[sizeOf(vars.hash1)]" is="#[MunitTools::equalTo(64)]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-intake-high-remains-alert-required-if-final-band-lower" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:execution>
+      <set-variable variableName="e" value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}} update {case b at .scoring.riskBand -&gt; 'HIGH'}]"/>
+      <set-variable variableName="mapped" value="#[output application/java --- modules::Persistence::normalized(vars.e)]"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.mapped.alertRequired]" is="#[MunitTools::equalTo(true)]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-invalid-scoring-timestamp-recorded-with-stable-received-time" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:execution>
+      <set-variable variableName="e" value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}} update {case t at .event.eventTimestamp -&gt; 'bad-date'}]"/>
+      <set-variable variableName="mapped" value="#[output application/java --- modules::Persistence::normalized(vars.e)]"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.mapped.timestampFallback]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.mapped.eventTimestamp]" is="#[MunitTools::equalTo('2026-09-11 09:00:00')]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-unsafe-persistence-rejected-before-db" expectedErrorType="MULE:EXPRESSION" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:execution>
+      <set-variable variableName="e" value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}} update {case c at .event.card.maskedCardNumber -&gt; '4111111111114417'}]"/>
+      <set-payload value="#[vars.e]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+  </munit:test>
+  <munit:test tags="m3" name="m3-database-outage-rolls-back-real-vm-consume" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="DB:CONNECTIVITY"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <vm:publish config-ref="M3_Test_VM" queueName="m3-recovery">
+        <vm:content>#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]</vm:content>
+      </vm:publish>
+      <try>
+        <try transactionalAction="ALWAYS_BEGIN">
+          <vm:consume config-ref="M3_Test_VM" queueName="m3-recovery" timeout="2"/>
+          <flow-ref name="persist-finalized-decision-sf"/>
+          <error-handler ref="persistenceErrorHandler"/>
+        </try>
+        <error-handler>
+          <on-error-continue logException="false" enableNotifications="false">
+            <set-variable variableName="rolledBack" value="#[true]"/>
+          </on-error-continue>
+        </error-handler>
+      </try>
+      <vm:consume config-ref="M3_Test_VM" queueName="m3-recovery" timeout="2"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.rolledBack]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-corr')]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="4">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-partial-decision-outbox-failure-rolls-back-real-vm-consume" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <vm:publish config-ref="M3_Test_VM" queueName="m3-recovery">
+        <vm:content>#[output application/java --- {event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}}]</vm:content>
+      </vm:publish>
+      <try>
+        <try transactionalAction="ALWAYS_BEGIN">
+          <vm:consume config-ref="M3_Test_VM" queueName="m3-recovery" timeout="2"/>
+          <flow-ref name="persist-finalized-decision-sf"/>
+          <error-handler ref="persistenceErrorHandler"/>
+        </try>
+        <error-handler>
+          <on-error-continue logException="false" enableNotifications="false">
+            <set-variable variableName="rolledBack" value="#[true]"/>
+          </on-error-continue>
+        </error-handler>
+      </try>
+      <vm:consume config-ref="M3_Test_VM" queueName="m3-recovery" timeout="2"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.rolledBack]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-corr')]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="4">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-id-conflict-retries-then-propagates" expectedErrorType="MULE:RETRY_EXHAUSTED" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="DB:QUERY_EXECUTION"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}}]"/>
+      <flow-ref name="persist-finalized-decision-sf"/>
+    </munit:execution>
+  </munit:test>
+  <munit:test tags="m3" name="m3-pending-outbox-sends-one-immediate-email" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Claim pending or interrupted alert"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="claimResult" value="#[output application/java --- {claimed:'I:M3-TEST'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Load immutable alert members"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="alertRows" value="#[output application/java --- [{kind:'IMMEDIATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-0' case e at .event.eventId -&gt; 'EV-M3-0'})}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="email:send">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Send durable alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="dispatch-alert-outbox-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.smtpAccepted]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="email:send" times="1"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+      <munit-tools:assert-that expression="#[modules::AlertTemplates::subject('IMMEDIATE',vars.alertEvents,vars.alertId) == 'HIGH RISK Payment – TX-M3-0 – Score 82']" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[modules::AlertTemplates::body('IMMEDIATE',vars.alertEvents,vars.alertId) contains 'INR 248,500.00']" is="#[MunitTools::equalTo(true)]"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-open-or-already-sent-outbox-is-not-claimed" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Claim pending or interrupted alert"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="claimResult" value="#[output application/java --- {claimed:null}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="dispatch-alert-outbox-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-aggregate-email-lists-every-suppressed-transaction" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Claim pending or interrupted alert"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="claimResult" value="#[output application/java --- {claimed:'A:M3-TEST'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Load immutable alert members"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="alertRows" value="#[output application/java --- [{kind:'AGGREGATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-0' case e at .event.eventId -&gt; 'EV-M3-0'})},{kind:'AGGREGATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-1' case e at .event.eventId -&gt; 'EV-M3-1'})},{kind:'AGGREGATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-2' case e at .event.eventId -&gt; 'EV-M3-2'})}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="email:send">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Send durable alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="dispatch-alert-outbox-sf"/>
+      <set-variable variableName="body" value="#[output application/java --- modules::AlertTemplates::body('AGGREGATE',vars.alertEvents,vars.alertId)]"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.body contains 'TX-M3-0']" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.body contains 'TX-M3-1']" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.body contains 'TX-M3-2']" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:assert-that expression="#[vars.body contains 'R02_GEO_MISMATCH']" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="email:send" times="1"/>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-smtp-outage-retries-and-releases-batch-as-pending" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Claim pending or interrupted alert"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="claimResult" value="#[output application/java --- {claimed:'I:M3-TEST'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Load immutable alert members"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="alertRows" value="#[output application/java --- [{kind:'IMMEDIATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-0' case e at .event.eventId -&gt; 'EV-M3-0'})}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="email:send">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Send durable alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="EMAIL:SEND"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="dispatch-alert-outbox-sf"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.smtpAccepted]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:verify-call processor="email:send" times="4"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-post-smtp-status-failure-propagates-for-lease-recovery" expectedErrorType="MULE:RETRY_EXHAUSTED" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Claim pending or interrupted alert"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="claimResult" value="#[output application/java --- {claimed:'I:M3-TEST'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Load immutable alert members"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="alertRows" value="#[output application/java --- [{kind:'IMMEDIATE',decision_envelope:({event:(readUrl('classpath://payment-event.json','application/json')),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:true,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'HIGH'},final:{riskScore:82,riskBand:'HIGH',decision:'REVIEW',ruleHits:[{ruleCode:'R01_AMOUNT',ruleName:'Amount',ruleWeight:35},{ruleCode:'R02_GEO_MISMATCH',ruleName:'Geography',ruleWeight:30},{ruleCode:'R04_MERCHANT_CAT',ruleName:'Merchant',ruleWeight:17}]}} update {case t at .event.transaction.transactionId -&gt; 'TX-M3-0' case e at .event.eventId -&gt; 'EV-M3-0'})}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="email:send">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Send durable alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Complete or release owned alert batch"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:error typeId="DB:CONNECTIVITY"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <flow-ref name="dispatch-alert-outbox-sf"/>
+    </munit:execution>
+  </munit:test>
+  <munit:test tags="m3" name="m3-flush-seals-expired-aggregate-and-invalidates-cache" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Find expired durable windows"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="expiredWindows" value="#[output application/java --- [{card_token:'TKN-FLUSH'}]]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Seal durable aggregate"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:payload value="#[payload]"/>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <os:store objectStore="alertThrottleStore" key="TKN-FLUSH">
+        <os:value>#[{windowEnd:1}]</os:value>
+      </os:store>
+      <flow-ref name="flush-expired-alert-windows-sf"/>
+      <os:contains objectStore="alertThrottleStore" key="TKN-FLUSH" target="cached"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.cached]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Seal durable aggregate"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+  <munit:test tags="m3" name="m3-actual-persistence-listener-calls-atomic-db-operation" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:enable-flow-sources>
+      <munit:enable-flow-source value="decision-persistence-flow"/>
+    </munit:enable-flow-sources>
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+        <munit-tools:then-return>
+          <munit-tools:variables>
+            <munit-tools:variable key="persistResult" value="#[output application/java --- {outcome:'INSERTED'}]"/>
+          </munit-tools:variables>
+        </munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:spy processor="logger">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Record decision persistence outcome"/>
+        </munit-tools:with-attributes>
+        <munit-tools:after-call>
+          <os:store objectStore="alertThrottleStore" key="M3-LISTENER">
+            <os:value>#[true]</os:value>
+          </os:store>
+        </munit-tools:after-call>
+      </munit-tools:spy>
+    </munit:behavior>
+    <munit:execution>
+      <os:store objectStore="alertThrottleStore" key="M3-LISTENER">
+        <os:value>#[false]</os:value>
+      </os:store>
+      <vm:publish config-ref="VM_Config" queueName="${vm.queue.decisions}">
+        <vm:content>#[output application/java --- {event:(vars.evt),correlationId:'m3-corr',riskConfig:vars.cfg,profile:{riskProfile:'STANDARD'},enrichmentIncomplete:false,alertRequired:false,receivedAt:'2026-09-11T09:00:00Z',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]}}]</vm:content>
+      </vm:publish>
+      <until-successful maxRetries="10" millisBetweenRetries="250">
+        <os:retrieve objectStore="alertThrottleStore" key="M3-LISTENER" target="listenerDone"/>
+        <choice>
+          <when expression="#[not vars.listenerDone]">
+            <raise-error type="APP:WAIT_FOR_LISTENER" description="Await persistence completion"/>
+          </when>
+        </choice>
+      </until-successful>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes>
+          <munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/>
+        </munit-tools:with-attributes>
+      </munit-tools:verify-call>
+    </munit:validation>
+  </munit:test>
+  <!-- Exercise the intake's JSON envelope through both real transactional listeners.
+       Only JDBC is mocked; no native database or SMTP operation is performed. -->
+  <munit:test tags="m3" name="m3-http-high-scoring-to-persistence"
+    ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']">
+    <munit:enable-flow-sources>
+      <munit:enable-flow-source value="payment-events-api-main"/>
+      <munit:enable-flow-source value="scoring-consumer-high-flow"/>
+      <munit:enable-flow-source value="decision-persistence-flow"/>
+    </munit:enable-flow-sources>
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Read customer risk profile"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:variables>
+          <munit-tools:variable key="profileRows" value="#[[{customer_id:'CUST-77219',risk_profile:'STANDARD',usual_hour_start:6,usual_hour_end:23}]]"/>
+        </munit-tools:variables></munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Read durable throttle window"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:variables><munit-tools:variable key="windowRows" value="#[[]]"/></munit-tools:variables></munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:variables><munit-tools:variable key="persistResult" value="#[{outcome:'INSERTED'}]"/></munit-tools:variables></munit-tools:then-return>
+      </munit-tools:mock-when>
+      <munit-tools:spy processor="logger">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Record decision persistence outcome"/></munit-tools:with-attributes>
+        <munit-tools:after-call>
+          <os:store objectStore="alertThrottleStore" key="M3-HTTP-PIPELINE"><os:value>#[vars.dbDecision]</os:value></os:store>
+        </munit-tools:after-call>
+      </munit-tools:spy>
+    </munit:behavior>
+    <munit:execution>
+      <os:store objectStore="alertThrottleStore" key="M3-HTTP-PIPELINE"><os:value>#[{}]</os:value></os:store>
+      <http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" target="pipelineResponse" targetValue="#[message]">
+        <http:body>#[output application/json --- readUrl('classpath://payment-event.json','application/json') update {case e at .eventId -&gt; 'M3-HTTP-PIPELINE'}]</http:body>
+        <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'pipeline-corr'}]</http:headers>
+      </http:request>
+      <until-successful maxRetries="20" millisBetweenRetries="250">
+        <os:retrieve objectStore="alertThrottleStore" key="M3-HTTP-PIPELINE" target="pipelineDecision"/>
+        <choice><when expression="#[isEmpty(vars.pipelineDecision)]"><raise-error type="APP:WAIT_FOR_LISTENER" description="Await scoring and persistence listeners"/></when></choice>
+      </until-successful>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.pipelineResponse.attributes.statusCode]" is="#[MunitTools::equalTo(202)]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.eventId]" is="#[MunitTools::equalTo('M3-HTTP-PIPELINE')]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.customerId]" is="#[MunitTools::equalTo('CUST-77219')]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.correlationId]" is="#[MunitTools::equalTo('pipeline-corr')]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.riskScore]" is="#[MunitTools::equalTo(82)]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.riskBand]" is="#[MunitTools::equalTo('HIGH')]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.decision]" is="#[MunitTools::equalTo('REVIEW')]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.enrichmentIncomplete]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.envelope.sourceQueue]" is="#[MunitTools::equalTo(p('vm.queue.high'))]"/>
+      <munit-tools:assert-that expression="#[vars.pipelineDecision.ruleHits.ruleCode]" is="#[MunitTools::equalTo(['R01_AMOUNT','R02_GEO_MISMATCH','R04_MERCHANT_CAT'])]"/>
+      <munit-tools:verify-call processor="db:select" times="1"><munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Read customer risk profile"/></munit-tools:with-attributes></munit-tools:verify-call>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1"><munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Atomic decision rules and outbox"/></munit-tools:with-attributes></munit-tools:verify-call>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+  <munit:after-test name="m3-drain-decision-test-messages">
+    <set-variable variableName="drainMore" value="#[true]"/>
+    <foreach collection="#[1 to 100]">
+      <choice>
+        <when expression="#[vars.drainMore]">
+          <try>
+            <vm:consume config-ref="VM_Config" queueName="${vm.queue.decisions}" timeout="1" timeoutUnit="MILLISECONDS"/>
+            <error-handler>
+              <on-error-continue type="VM:EMPTY_QUEUE" logException="false">
+                <set-variable variableName="drainMore" value="#[false]"/>
+              </on-error-continue>
+            </error-handler>
+          </try>
+        </when>
+      </choice>
+    </foreach>
+  </munit:after-test>
+<munit:test tags="m3" name="m3-timestamp-lower-bound-utc" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '1970-01-01T05:30:01+05:30'}),receivedAt:'2050-01-01T00:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('1970-01-01 00:00:01')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(false)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('1970-01-01T05:30:01+05:30')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+<munit:test tags="m3" name="m3-timestamp-upper-bound-utc" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '2038-01-19T08:44:07+05:30'}),receivedAt:'2050-01-01T00:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('2038-01-19 03:14:07')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(false)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('2038-01-19T08:44:07+05:30')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+<munit:test tags="m3" name="m3-timestamp-before-range-uses-received" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '1970-01-01T00:00:00Z'}),receivedAt:'2026-09-11T09:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('2026-09-11 09:00:00')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(true)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('1970-01-01T00:00:00Z')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+<munit:test tags="m3" name="m3-timestamp-offset-after-range-uses-received" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '2038-01-19T03:14:07-01:00'}),receivedAt:'2026-09-11T09:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('2026-09-11 09:00:00')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(true)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('2038-01-19T03:14:07-01:00')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+<munit:test tags="m3" name="m3-timestamp-fraction-after-upper-bound" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '2038-01-19T03:14:07.001Z'}),receivedAt:'2026-09-11T09:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('2026-09-11 09:00:00')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(true)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('2038-01-19T03:14:07.001Z')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+<munit:test tags="m3" name="m3-timestamp-unusable-event-and-received-use-fixed-epoch" ignore="#[(p('test.milestone') default 'all') != 'all' and p('test.milestone') != 'm3']"><munit:execution><set-payload value="#[output application/java --- modules::Persistence::normalized({event:(readUrl('classpath://payment-event.json','application/json') update {case t at .eventTimestamp -&gt; '2050-01-01T00:00:00Z'}),receivedAt:'1960-01-01T00:00:00Z',correlationId:'m3-time-corr',scoring:{riskBand:'LOW'},final:{riskScore:0,riskBand:'LOW',decision:'APPROVE',ruleHits:[]},alertRequired:false,riskConfig:vars.cfg})]"/></munit:execution><munit:validation><munit-tools:assert-that expression="#[payload.eventTimestamp]" is="#[MunitTools::equalTo('1970-01-01 00:00:01')]"/><munit-tools:assert-that expression="#[payload.timestampFallback]" is="#[MunitTools::equalTo(true)]"/><munit-tools:assert-that expression="#[payload.envelope.event.eventTimestamp]" is="#[MunitTools::equalTo('2050-01-01T00:00:00Z')]"/><munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('m3-time-corr')]"/></munit:validation></munit:test>
+</mule>

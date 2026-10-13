@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:os="http://www.mulesoft.org/schema/mule/os"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+  <!-- Sources remain disabled. HTTP tests explicitly enable only the test listener.
+       Scheduler flows are invoked synchronously, exercising their real bodies and
+       error handlers without timing races or background JDBC/SMTP operations. -->
+  <munit:test name="coverage-apikit-not-found-safe-correlated-response">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:execution>
+      <http:request config-ref="Intake_Test_Client" method="GET" path="/api/not-a-resource">
+        <http:headers>#[{'X-Correlation-ID':'coverage-routing'}]</http:headers>
+        <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+      </http:request>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(404)]"/>
+      <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::equalTo({errorCode:'NOT_FOUND',message:'Request could not be processed.',correlationId:'coverage-routing'})]"/>
+      <munit-tools:assert-that expression="#[attributes.headers.'x-correlation-id']" is="#[MunitTools::equalTo('coverage-routing')]"/>
+      <munit-tools:verify-call processor="vm:publish" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-unexpected-intake-error-safe-500">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:behavior>
+      <munit-tools:mock-when processor="os:store">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="objectStore" whereValue="dedupStore"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:error typeId="MULE:EXPRESSION"/></munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events">
+        <http:body>#[output application/json --- readUrl('classpath://payment-event.json','application/json') update {case id at .eventId -> 'COV-UNEXPECTED'}]</http:body>
+        <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'coverage-unexpected'}]</http:headers>
+        <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+      </http:request>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[attributes.statusCode]" is="#[MunitTools::equalTo(500)]"/>
+      <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::equalTo({errorCode:'INTERNAL_ERROR',message:'An unexpected error occurred. Quote the correlationId to support.',correlationId:'coverage-unexpected'})]"/>
+      <munit-tools:assert-that expression="#[attributes.headers.'x-correlation-id']" is="#[MunitTools::equalTo('coverage-unexpected')]"/>
+      <munit-tools:verify-call processor="vm:publish" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-dedupe-release-failure-preserves-503-and-reservation">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:behavior>
+      <munit-tools:mock-when processor="vm:publish"><munit-tools:then-return><munit-tools:error typeId="VM:QUEUE_TIMEOUT"/></munit-tools:then-return></munit-tools:mock-when>
+      <munit-tools:mock-when processor="os:remove">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="objectStore" whereValue="dedupStore"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:error typeId="MULE:EXPRESSION"/></munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" target="response" targetValue="#[message]">
+        <http:body>#[output application/json --- readUrl('classpath://payment-event.json','application/json') update {case id at .eventId -> 'COV-RELEASE'}]</http:body>
+        <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'coverage-release'}]</http:headers>
+        <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+      </http:request>
+      <os:contains objectStore="dedupStore" key="COV-RELEASE" target="reservationRetained"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.response.attributes.statusCode]" is="#[MunitTools::equalTo(503)]"/>
+      <munit-tools:assert-that expression="#[vars.response.payload.errorCode]" is="#[MunitTools::equalTo('SERVICE_UNAVAILABLE')]"/>
+      <munit-tools:assert-that expression="#[vars.response.payload.correlationId]" is="#[MunitTools::equalTo('coverage-release')]"/>
+      <munit-tools:assert-that expression="#[vars.response.attributes.headers.'retry-after']" is="#[MunitTools::equalTo('5')]"/>
+      <munit-tools:assert-that expression="#[vars.reservationRetained]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="vm:publish" times="4"/>
+      <munit-tools:verify-call processor="os:remove" times="1"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-velocity-storage-failure-releases-intake-reservation">
+    <munit:enable-flow-sources><munit:enable-flow-source value="payment-events-api-main"/></munit:enable-flow-sources>
+    <munit:behavior>
+      <munit-tools:mock-when processor="os:store">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="objectStore" whereValue="velocityStore"/></munit-tools:with-attributes>
+        <munit-tools:then-return><munit-tools:error typeId="MULE:EXPRESSION"/></munit-tools:then-return>
+      </munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <http:request config-ref="Intake_Test_Client" method="POST" path="/api/payments/events" target="response" targetValue="#[message]">
+        <http:body>#[output application/json --- readUrl('classpath://payment-event.json','application/json') update {case id at .eventId -> 'COV-VELOCITY'}]</http:body>
+        <http:headers>#[{'Content-Type':'application/json','X-Correlation-ID':'coverage-velocity'}]</http:headers>
+        <http:response-validator><http:success-status-code-validator values="200..599"/></http:response-validator>
+      </http:request>
+      <os:contains objectStore="dedupStore" key="COV-VELOCITY" target="reservationRetained"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.response.attributes.statusCode]" is="#[MunitTools::equalTo(503)]"/>
+      <munit-tools:assert-that expression="#[vars.response.payload.errorCode]" is="#[MunitTools::equalTo('SERVICE_UNAVAILABLE')]"/>
+      <munit-tools:assert-that expression="#[vars.response.payload.correlationId]" is="#[MunitTools::equalTo('coverage-velocity')]"/>
+      <munit-tools:assert-that expression="#[vars.reservationRetained]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:verify-call processor="vm:publish" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-unsafe-queued-envelope-never-enriches-or-publishes">
+    <munit:execution>
+      <set-payload value="#[output application/java --- {event:(vars.evt update {case name at .customer.name -> ((1 to 16) map '7') joinBy ''}),correlationId:'coverage-unsafe'}]"/>
+      <try>
+        <flow-ref name="process-scored-event-sf"/>
+        <error-handler><on-error-continue type="APP:UNSAFE_QUEUE_EVENT" logException="false" enableNotifications="false"><set-variable variableName="caughtType" value="#[error.errorType.namespace ++ ':' ++ error.errorType.identifier]"/></on-error-continue></error-handler>
+      </try>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.caughtType]" is="#[MunitTools::equalTo('APP:UNSAFE_QUEUE_EVENT')]"/>
+      <munit-tools:assert-that expression="#[payload.correlationId]" is="#[MunitTools::equalTo('coverage-unsafe')]"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+      <munit-tools:verify-call processor="vm:publish" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-missing-durable-window-removes-stale-cache">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="windowRows" value="#[[]]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-variable variableName="dbDecision" value="#[{cardToken:'COV-CACHE',maskedCard:'XXXXXXXXXXXX0000'}]"/>
+      <os:store objectStore="alertThrottleStore" key="COV-CACHE"><os:value>#[{windowId:'expired-test',windowEnd:1}]</os:value></os:store>
+      <flow-ref name="refresh-throttle-cache-sf"/>
+      <os:contains objectStore="alertThrottleStore" key="COV-CACHE" target="staleCacheExists"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.staleCacheExists]" is="#[MunitTools::equalTo(false)]"/>
+      <munit-tools:verify-call processor="os:remove" times="1"/>
+      <munit-tools:verify-call processor="db:select" times="1"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-dispatch-scheduler-no-claim-does-not-send">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="claimResult" value="#[{claimed:null}]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution><flow-ref name="outbox-dispatch-scheduler-flow"/></munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.claimResult.claimed == null]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-dispatch-scheduler-unsafe-members-retains-uncompleted-claim">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="claimResult" value="#[{claimed:'I:COV-UNSAFE'}]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:select"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="alertRows" value="#[[]]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution><flow-ref name="outbox-dispatch-scheduler-flow"/></munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.claimResult.claimed]" is="#[MunitTools::equalTo('I:COV-UNSAFE')]"/>
+      <munit-tools:assert-that expression="#[isEmpty(vars.alertEvents)]" is="#[MunitTools::equalTo(true)]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-dispatch-scheduler-exhausted-db-retries-is-contained">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:stored-procedure"><munit-tools:then-return><munit-tools:error typeId="DB:CONNECTIVITY"/></munit-tools:then-return></munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution>
+      <set-payload value="#[{testMarker:'coverage-job-failure'}]"/>
+      <flow-ref name="outbox-dispatch-scheduler-flow"/>
+    </munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[payload.testMarker]" is="#[MunitTools::equalTo('coverage-job-failure')]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="4"/>
+      <munit-tools:verify-call processor="db:select" times="0"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+
+  <munit:test name="coverage-flush-scheduler-cache-failure-preserves-durable-seal">
+    <munit:behavior>
+      <munit-tools:mock-when processor="db:select"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="expiredWindows" value="#[[{card_token:'COV-FLUSH'}]]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+      <munit-tools:mock-when processor="db:stored-procedure"><munit-tools:then-return><munit-tools:payload value="#[payload]"/></munit-tools:then-return></munit-tools:mock-when>
+      <munit-tools:mock-when processor="os:contains"><munit-tools:then-return><munit-tools:variables><munit-tools:variable key="cachedWindow" value="#[true]"/></munit-tools:variables></munit-tools:then-return></munit-tools:mock-when>
+      <munit-tools:mock-when processor="os:remove"><munit-tools:then-return><munit-tools:error typeId="MULE:EXPRESSION"/></munit-tools:then-return></munit-tools:mock-when>
+    </munit:behavior>
+    <munit:execution><flow-ref name="alert-window-flush-scheduler-flow"/></munit:execution>
+    <munit:validation>
+      <munit-tools:assert-that expression="#[vars.flushCardToken]" is="#[MunitTools::equalTo('COV-FLUSH')]"/>
+      <munit-tools:verify-call processor="db:stored-procedure" times="1">
+        <munit-tools:with-attributes><munit-tools:with-attribute attributeName="doc:name" whereValue="Seal durable aggregate"/></munit-tools:with-attributes>
+      </munit-tools:verify-call>
+      <munit-tools:verify-call processor="os:remove" times="1"/>
+      <munit-tools:verify-call processor="email:send" times="0"/>
+    </munit:validation>
+  </munit:test>
+</mule>

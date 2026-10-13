@@ -14,14 +14,14 @@
        successfully until the next persistent VM handoff succeeds. -->
   <flow name="scoring-consumer-high-flow" initialState="${consumer.initialState}">
     <vm:listener config-ref="VM_Config" queueName="${vm.queue.high}"
-      numberOfConsumers="${consumer.high.concurrency}" transactionalAction="ALWAYS_BEGIN"/>
+      numberOfConsumers="${consumer.high.concurrency}" transactionalAction="ALWAYS_BEGIN" timeout="1" timeoutUnit="SECONDS"/>
     <set-variable variableName="sourceQueue" value="${vm.queue.high}"/>
     <flow-ref name="process-scored-event-sf"/>
     <error-handler ref="scoringConsumerErrorHandler"/>
   </flow>
   <flow name="scoring-consumer-standard-flow" initialState="${consumer.initialState}">
     <vm:listener config-ref="VM_Config" queueName="${vm.queue.standard}"
-      numberOfConsumers="${consumer.standard.concurrency}" transactionalAction="ALWAYS_BEGIN"/>
+      numberOfConsumers="${consumer.standard.concurrency}" transactionalAction="ALWAYS_BEGIN" timeout="1" timeoutUnit="SECONDS"/>
     <set-variable variableName="sourceQueue" value="${vm.queue.standard}"/>
     <flow-ref name="process-scored-event-sf"/>
     <error-handler ref="scoringConsumerErrorHandler"/>

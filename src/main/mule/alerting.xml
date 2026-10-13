@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+ xmlns:db="http://www.mulesoft.org/schema/mule/db"
+ xmlns:email="http://www.mulesoft.org/schema/mule/email"
+ xmlns:os="http://www.mulesoft.org/schema/mule/os"
+ xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+ http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+ http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+ http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+  <email:smtp-config name="Risk_SMTP_Config">
+    <email:smtp-connection host="${smtp.host}" port="${smtp.port}" timeoutUnit="MILLISECONDS" connectionTimeout="10000" readTimeout="10000" writeTimeout="10000">
+      <reconnection failsDeployment="false"><reconnect count="1" frequency="1000"/></reconnection>
+    </email:smtp-connection>
+  </email:smtp-config>
+  <flow name="outbox-dispatch-scheduler-flow" initialState="${alert.initialState}">
+    <scheduler disallowConcurrentExecution="true"><scheduling-strategy><fixed-frequency frequency="${alert.delivery.frequencyMs}"/></scheduling-strategy></scheduler>
+    <flow-ref name="dispatch-alert-outbox-sf"/>
+    <error-handler ref="alertJobErrorHandler"/>
+  </flow>
+  <flow name="alert-window-flush-scheduler-flow" initialState="${alert.initialState}">
+    <scheduler disallowConcurrentExecution="true"><scheduling-strategy><fixed-frequency frequency="${alert.flushFrequencyMs}"/></scheduling-strategy></scheduler>
+    <flow-ref name="flush-expired-alert-windows-sf"/>
+    <error-handler ref="alertJobErrorHandler"/>
+  </flow>
+  <sub-flow name="dispatch-alert-outbox-sf">
+    <set-variable variableName="leaseOwner" value="#[uuid()]"/>
+    <until-successful maxRetries="${retry.db.max}" millisBetweenRetries="${retry.db.delayMs}">
+      <db:stored-procedure config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" target="claimResult" doc:name="Claim pending or interrupted alert">
+        <db:sql>{call claim_alert_batch(:ownerKey,:leaseSeconds,:claimed)}</db:sql>
+        <db:input-parameters>#[{ownerKey:vars.leaseOwner,leaseSeconds:p('alert.delivery.leaseSeconds') as Number}]</db:input-parameters>
+        <db:output-parameters><db:output-parameter key="claimed" type="VARCHAR"/></db:output-parameters>
+      </db:stored-procedure>
+    </until-successful>
+    <choice><when expression="#[vars.claimResult.claimed != null]">
+      <set-variable variableName="alertId" value="#[vars.claimResult.claimed]"/>
+      <db:select config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" target="alertRows" doc:name="Load immutable alert members">
+        <db:sql>SELECT o.kind,e.decision_envelope FROM alert_outbox o JOIN alert_outbox_members m ON m.alert_id=o.alert_id JOIN fraud_events e ON e.event_id=m.event_id WHERE o.alert_id=:alertId ORDER BY e.created_at,e.event_id</db:sql>
+        <db:input-parameters>#[{alertId:vars.alertId}]</db:input-parameters>
+      </db:select>
+      <set-variable variableName="alertEvents" value="#[output application/java --- vars.alertRows map (r) -> if (r.decision_envelope is Object) r.decision_envelope else read(r.decision_envelope as String,'application/json')]"/>
+      <choice><when expression="#[isEmpty(vars.alertEvents) or modules::Masking::hasPan(vars.alertEvents)]">
+        <raise-error type="APP:UNSAFE_ALERT" description="Outbox members missing or unsafe"/>
+      </when></choice>
+      <set-variable variableName="smtpAccepted" value="#[false]"/>
+      <try doc:name="Bounded SMTP attempts">
+        <until-successful maxRetries="${retry.smtp.max}" millisBetweenRetries="${retry.smtp.delayMs}">
+          <email:send config-ref="Risk_SMTP_Config" fromAddress="${smtp.from}" subject="#[output text/plain encoding='UTF-8' --- modules::AlertTemplates::subject(vars.alertRows[0].kind,vars.alertEvents,vars.alertId)]" doc:name="Send durable alert batch">
+            <email:to-addresses><email:to-address value="${alert.distributionList}"/></email:to-addresses>
+            <email:body contentType="text/plain"><email:content>#[output text/plain encoding='UTF-8' --- modules::AlertTemplates::body(vars.alertRows[0].kind,vars.alertEvents,vars.alertId)]</email:content></email:body>
+          </email:send>
+        </until-successful>
+        <set-variable variableName="smtpAccepted" value="#[true]"/>
+        <error-handler><on-error-continue type="ANY" logException="false" enableNotifications="false">
+          <logger level="ERROR" category="${app.logCategory}.alert" message="#['ALERT_EMAIL_FAILED alertId=' ++ vars.alertId ++ ' pending delivery retained']"/>
+        </on-error-continue></error-handler>
+      </try>
+      <flow-ref name="complete-alert-outbox-sf"/>
+    </when></choice>
+  </sub-flow>
+  <sub-flow name="complete-alert-outbox-sf">
+    <until-successful maxRetries="${retry.db.max}" millisBetweenRetries="${retry.db.delayMs}">
+      <db:stored-procedure config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" doc:name="Complete or release owned alert batch">
+        <db:sql>{call complete_alert_batch(:alertId,:ownerKey,:accepted)}</db:sql>
+        <db:input-parameters>#[{alertId:vars.alertId,ownerKey:vars.leaseOwner,accepted:vars.smtpAccepted}]</db:input-parameters>
+      </db:stored-procedure>
+    </until-successful>
+    <logger level="INFO" category="${app.logCategory}.alert" message="#['ALERT_STATUS_RECORDED alertId=' ++ vars.alertId ++ ' smtpAccepted=' ++ (vars.smtpAccepted as String)]"/>
+  </sub-flow>
+  <sub-flow name="flush-expired-alert-windows-sf">
+    <db:select config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" target="expiredWindows" doc:name="Find expired durable windows">
+      <db:sql>SELECT card_token FROM alert_card_windows WHERE window_end &lt;= UTC_TIMESTAMP(6) ORDER BY window_end LIMIT 100</db:sql>
+    </db:select>
+    <foreach collection="#[vars.expiredWindows]">
+      <set-variable variableName="flushCardToken" value="#[payload.card_token]"/>
+      <until-successful maxRetries="${retry.db.max}" millisBetweenRetries="${retry.db.delayMs}">
+        <db:stored-procedure config-ref="Customer_Database_Config" transactionalAction="NOT_SUPPORTED" doc:name="Seal durable aggregate">
+          <db:sql>{call flush_alert_window(:cardToken)}</db:sql>
+          <db:input-parameters>#[{cardToken:vars.flushCardToken}]</db:input-parameters>
+        </db:stored-procedure>
+      </until-successful>
+      <try>
+        <os:contains objectStore="alertThrottleStore" key="#[vars.flushCardToken]" target="cachedWindow"/>
+        <choice><when expression="#[vars.cachedWindow]"><os:remove objectStore="alertThrottleStore" key="#[vars.flushCardToken]"/></when></choice>
+        <error-handler><on-error-continue logException="false" enableNotifications="false">
+          <logger level="WARN" category="${app.logCategory}.alert" message="THROTTLE_CACHE_INVALIDATION_FAILED durable aggregate retained"/>
+        </on-error-continue></error-handler>
+      </try>
+    </foreach>
+  </sub-flow>
+  <error-handler name="alertJobErrorHandler">
+    <on-error-continue type="ANY" logException="false" enableNotifications="false">
+      <logger level="ERROR" category="${app.logCategory}.alert" message="ALERT_JOB_FAILED durable outbox and lease recovery retained"/>
+    </on-error-continue>
+  </error-handler>
+</mule>
