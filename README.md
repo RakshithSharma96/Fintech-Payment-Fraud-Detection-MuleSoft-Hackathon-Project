@@ -169,7 +169,6 @@ payment-fraud-detection/
 ├── scripts/
 │   ├── setup-local.ps1
 │   ├── maven.ps1
-│   ├── verify-static.py
 │   └── test-milestone-3.ps1
 ├── mule-artifact.json
 ├── pom.xml

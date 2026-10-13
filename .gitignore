@@ -14,3 +14,6 @@ tools/
 
 # Generated verification reports and test logs
 verification/
+
+# Local-only Python verification utilities
+scripts/*.py
