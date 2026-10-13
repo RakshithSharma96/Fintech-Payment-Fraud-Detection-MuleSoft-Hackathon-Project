@@ -9,4 +9,8 @@ src/main/resources/secure-*.yaml
 !src/main/resources/secure-*.example.yaml
 __pycache__/
 tools/
+# IDE metadata and local backups
+.project.backup
 
+# Generated verification reports and test logs
+verification/
